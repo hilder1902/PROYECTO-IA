@@ -1,0 +1,366 @@
+".\mi_entorno_1\Scripts\Activate"
+
+"numero de cuenta" "197115903"
+
+"servidor" "Exness-MT5Trial11"
+
+".\mi_entorno_1\Scripts\Activate"
+
+import MetaTrader5 as mt5 
+import logging
+import time
+
+import tensorflow as tf
+from tensorflow import keras
+
+import scipy as sp
+import pandas as pd
+import numpy as np
+import os
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+
+from sklearn.model_selection import train_test_split, TimeSeriesSplit
+from sklearn.metrics import accuracy_score, mean_absolute_error
+from sklearn.preprocessing import MinMaxScaler
+
+# Definir capas de Keras
+Input = tf.keras.layers.Input
+LSTM = tf.keras.layers.LSTM
+Dense = tf.keras.layers.Dense
+Attention = tf.keras.layers.Attention
+Dropout = tf.keras.layers.Dropout
+
+# Importar modelos y optimizadores desde tf.keras
+Model = tf.keras.models.Model
+Sequential = tf.keras.models.Sequential
+Adam = tf.keras.optimizers.Adam
+EarlyStopping = tf.keras.callbacks.EarlyStopping
+
+import optuna
+
+
+
+
+
+
+
+
+
+
+# Configuración de logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Función para obtener datos del mercado en tiempo real
+def fetch_market_data(symbol, timeframe, limit=10, interval=1, continuous=False):
+    if not mt5.initialize():
+        logging.error("No se pudo inicializar MetaTrader 5.")
+        return None
+
+    try:
+        if continuous:
+            logging.info(f"Iniciando obtención continua de datos para {symbol}...")
+            while True:
+                try:
+                    rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, limit)
+                    if rates is None:
+                        logging.error(f"Error al obtener datos para {symbol}: {mt5.last_error()}")
+                    else:
+                        df = pd.DataFrame(rates)
+                        df['time'] = pd.to_datetime(df['time'], unit='s')
+                        logging.info(f"Datos obtenidos para {symbol}:\n{df.tail(1)}")
+                except Exception as e:
+                    logging.error(f"Error inesperado al obtener datos: {e}")
+                time.sleep(interval)
+        else:
+            rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, limit)
+            if rates is None:
+                logging.error(f"Error al obtener datos para {symbol}: {mt5.last_error()}")
+                return None
+            
+            df = pd.DataFrame(rates)
+            df['time'] = pd.to_datetime(df['time'], unit='s')
+            return df
+    finally:
+        mt5.shutdown()
+        logging.info("MetaTrader 5 cerrado correctamente.")
+
+
+
+
+# 🔹 Preparar los datos
+def prepare_data(data): 
+    scaler_x = MinMaxScaler()
+    scaler_y = MinMaxScaler()
+    
+    df = pd.DataFrame(data, columns=[f'feature_{i}' for i in range(data.shape[1])])
+    X = df.drop(columns=['feature_0'])
+    y = df[['feature_0']].values  
+    
+    X_scaled = pd.DataFrame(scaler_x.fit_transform(X), columns=X.columns)
+    y_scaled = scaler_y.fit_transform(y).flatten()  
+    
+    df_scaled = pd.concat([pd.DataFrame(y_scaled, columns=['feature_0']), X_scaled], axis=1)
+    
+    return df_scaled, scaler_x, scaler_y
+
+# 🔹 Modelo LSTM optimizado
+def create_model(timesteps, features):
+    model = Sequential([
+        Input(shape=(timesteps, features)),
+        LSTM(64, return_sequences=True),
+        Dropout(0.2),
+        LSTM(32, return_sequences=False),
+        Dropout(0.2),
+        Dense(16, activation='relu'),
+        Dense(8, activation='relu'),
+        Dense(1, activation='linear')
+    ])
+    model.compile(optimizer=Adam(learning_rate=0.001), loss='mae', metrics=['mae'])
+    return model
+
+# 🔹 Entrenar modelo
+def train_model(model, X_train, y_train, epochs=200, batch_size=64):
+    early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+    return model.fit(
+        X_train, y_train, 
+        epochs=epochs, batch_size=batch_size, 
+        verbose=1, validation_split=0.2, 
+        callbacks=[early_stopping]
+    )
+
+# 🔹 Predecir valores futuros
+def predict_future(model, X):
+    return model.predict(X)
+
+# 🔹 Calcular RSI correctamente
+
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+
+# 🔹 Calcular ATR manualmente
+def calculate_atr(df, high_col, low_col, close_col, window=14):
+    df['H-L'] = df[high_col] - df[low_col]
+    df['H-C'] = abs(df[high_col] - df[close_col].shift(1))
+    df['L-C'] = abs(df[low_col] - df[close_col].shift(1))
+    df['TR'] = df[['H-L', 'H-C', 'L-C']].max(axis=1)
+    df['ATR'] = df['TR'].rolling(window=window).mean()
+    df.drop(columns=['H-L', 'H-C', 'L-C', 'TR'], inplace=True)
+    return df
+
+# 🔹 Calcular ADX manualmente
+def calculate_adx(df, high_col, low_col, close_col, window=14):
+    df['+DM'] = df[high_col].diff()
+    df['-DM'] = df[low_col].diff()
+    df['+DM'] = np.where((df['+DM'] > df['-DM']) & (df['+DM'] > 0), df['+DM'], 0)
+    df['-DM'] = np.where((df['-DM'] > df['+DM']) & (df['-DM'] > 0), df['-DM'], 0)
+
+    df = calculate_atr(df, high_col, low_col, close_col, window)
+    
+    df['+DI'] = 100 * (df['+DM'].rolling(window=window).mean() / df['ATR'])
+    df['-DI'] = 100 * (df['-DM'].rolling(window=window).mean() / df['ATR'])
+    df['DX'] = 100 * abs(df['+DI'] - df['-DI']) / (df['+DI'] + df['-DI'])
+    df['ADX'] = df['DX'].rolling(window=window).mean()
+    
+    df.drop(columns=['+DM', '-DM', '+DI', '-DI', 'DX'], inplace=True)
+    return df
+
+# 🔹 Calcular RSI manualmente
+def calculate_rsi(df, column, window=14):
+    delta = df[column].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+    rs = gain / loss
+    df['RSI'] = 100 - (100 / (1 + rs))
+    df['RSI'].fillna(50, inplace=True)
+    return df
+
+# 🔹 Generar señales de compra y venta
+def generate_signals(df):
+    df['SMA_5'] = df['AI_Indicator'].rolling(window=5).mean()
+    df['SMA_10'] = df['AI_Indicator'].rolling(window=10).mean()
+    df['Momentum'] = df['AI_Indicator'].diff()
+
+    df.dropna(inplace=True)
+
+    df['Buy_Signal'] = (df['SMA_5'] > df['SMA_10']) & (df['RSI'] < 30) & (df['Momentum'] > 0) & (df['ADX'] > 20)
+    df['Sell_Signal'] = (df['SMA_5'] < df['SMA_10']) & (df['RSI'] > 70) & (df['Momentum'] < 0) & (df['ADX'] > 20)
+
+    return df
+
+# 🔹 Modelo LSTM optimizado con tuning de hiperparámetros
+def create_model(trial, timesteps, features):
+    units1 = trial.suggest_int('units1', 32, 128)
+    units2 = trial.suggest_int('units2', 16, 64)
+    dropout_rate = trial.suggest_float('dropout_rate', 0.1, 0.5)
+    learning_rate = trial.suggest_float('learning_rate', 1e-4, 1e-2)
+
+    model = Sequential([
+        Input(shape=(timesteps, features)),
+        LSTM(units1, return_sequences=True),
+        Dropout(dropout_rate),
+        LSTM(units2, return_sequences=False),
+        Dropout(dropout_rate),
+        Dense(16, activation='relu'),
+        Dense(8, activation='relu'),
+        Dense(1, activation='linear')
+    ])
+    model.compile(optimizer=Adam(learning_rate=learning_rate), loss='mae', metrics=['mae'])
+    return model
+
+# 🔹 Entrenar modelo con validación cruzada
+def objective(trial):
+    global ventanas, etiquetas, window_size
+
+    tscv = TimeSeriesSplit(n_splits=5)
+    mae_scores = []
+
+    for train_idx, val_idx in tscv.split(ventanas):
+        X_train, X_val = ventanas[train_idx], ventanas[val_idx]
+        y_train, y_val = etiquetas[train_idx], etiquetas[val_idx]
+
+        model = create_model(trial, window_size, X_train.shape[2])
+        early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+
+        model.fit(X_train, y_train, epochs=50, batch_size=64, validation_data=(X_val, y_val),
+                  verbose=0, callbacks=[early_stopping])
+        
+        y_pred = model.predict(X_val).flatten()
+        mae_scores.append(mean_absolute_error(y_val, y_pred))
+
+    return np.mean(mae_scores)
+
+# 🔹 Simulación de datos
+np.random.seed(42)
+data = np.random.rand(10000, 5)
+data = (data - np.mean(data, axis=0)) / np.std(data, axis=0)
+
+# 🔹 Calcular indicadores y preparar datos
+df = pd.DataFrame(data, columns=['Open', 'High', 'Low', 'Close', 'Volume'])
+df = calculate_rsi(df, column='Close', window=14)
+df = calculate_atr(df, high_col='High', low_col='Low', close_col='Close', window=14)
+df = calculate_adx(df, high_col='High', low_col='Low', close_col='Close', window=14)
+
+window_size = 50
+future_offset = 50
+tp = 0.0001
+
+# 🔹 Preparar datos para LSTM con etiquetas
+ventanas = []
+etiquetas = []
+
+for i in range(len(df) - window_size - future_offset):
+    ventanas.append(df.iloc[i:i + window_size].values)
+    precio_actual = df.iloc[i + window_size - 1]['Close']
+    precio_futuro = df.iloc[i + window_size + future_offset - 1]['Close']
+    etiquetas.append(1 if abs(precio_futuro - precio_actual) >= tp else 0)
+
+ventanas = np.array(ventanas, dtype=np.float32)
+etiquetas = np.array(etiquetas, dtype=np.float32)
+
+# 🔹 Optimización de hiperparámetros con Optuna
+study = optuna.create_study(direction='minimize')
+study.optimize(objective, n_trials=20)
+
+# 🔹 Entrenar modelo final con los mejores hiperparámetros
+best_params = study.best_params
+model = create_model(optuna.trial.FixedTrial(best_params), window_size, ventanas.shape[2])
+
+train_size = int(0.8 * len(ventanas))
+ventanas_train, etiquetas_train = ventanas[:train_size], etiquetas[:train_size]
+ventanas_test, etiquetas_test = ventanas[train_size:], etiquetas[train_size:]
+
+early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+model.fit(ventanas_train, etiquetas_train, epochs=50, batch_size=64, validation_data=(ventanas_test, etiquetas_test),
+          callbacks=[early_stopping])
+
+
+
+# Predicción en tiempo real
+symbols = [
+    "AUDCADm", "AUDCHFm", "AUDDKKm", "AUDJPYm", "AUDMXNm", "AUDNOKm", "AUDNZDm", "AUDPLNm",
+    "AUDSEKm", "AUDSGDm", "AUDUSDm", "AUDZARm", "AUS200m", "CADCHFm", "CADJPYm", "CADMXNm",
+    "CADNOKm", "CADPLNm", "CHFDKKm", "CHFJPYm", "CHFMXNm", "CHFNOKm", "CHFPLNm", "CHFSEKm",
+    "CHFSGDm", "CHFZARm", "DKKJPYm", "DKKPLNm", "DKKSGDm", "DKKZARm", "EURAUDm", "EURCADm",
+    "EURCHFm", "EURDKKm", "EURGBPm", "EURJPYm", "EURMXNm", "EURNOKm", "EURNZDm", "EURPLNm",
+    "EURSEKm", "EURSGDm", "EURUSDm", "EURZARm", "GBPCADm", "GBPCHFm", "GBPDKKm", "GBPILSm",
+    "GBPJPYm", "GBPMXNm", "GBPNOKm", "GBPNZDm", "GBPPLNm", "GBPSEKm", "GBPSGDm", "GBPUSDm",
+    "GBPZARm", "NOKDKKm", "NOKJPYm", "NOKSEKm", "NZDCADm", "NZDCHFm", "NZDDKKm", "NZDJPYm",
+    "NZDMXNm", "NZDNOKm", "NZDPLNm", "NZDSEKm", "NZDSGDm", "NZDUSDm", "NZDZARm", "PLNDKKm",
+    "PLNJPYm", "PLNSEKm", "SEKDKKm", "SEKJPYm", "SGDHKDm", "SGDJPYm", "USDCADm", "USDCHFm",
+    "USDCNHm", "USDDKKm", "USDHKDm", "USDILSm", "USDJPYm", "USDMXNm", "USDNOKm", "USDPLNm",
+    "USDSEKm", "USDSGDm", "USDTHBm", "USDZARm", "XAGAUDm", "XAGEURm", "XAGGBPm", "XAGUSDm",
+    "XALUSDm", "XAUEURm", "XAUGBPm", "XAUUSDm", "XCUUSDm", "XNGUSDm", "XNIUSDm", "XPBUSDm",
+    "XPDUSDm", "XPTUSDm", "XZNUSDm", "ZARJPYm"
+]
+
+# Configurar logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def load_trained_model():
+    try:
+        return tf.keras.models.load_model("modelo_final.h5")
+    except Exception as e:
+        logging.error(f"Error al cargar el modelo: {e}")
+        return None
+
+# 🔹 Función principal
+def main():
+    timeframe = mt5.TIMEFRAME_M1
+
+    # Inicializar MetaTrader 5 solo una vez
+    if not mt5.initialize():
+        logging.error("Error al inicializar MetaTrader 5.")
+        return
+
+    model = load_trained_model()
+    if model is None:
+        return
+
+    for symbol in symbols:
+        logging.info(f"Iniciando predicción para {symbol}...")
+
+        market_data = fetch_market_data(symbol, timeframe, limit=50)
+        if market_data is None or len(market_data) < 50:
+            logging.warning(f"Datos insuficientes para {symbol}. Saltando...")
+            continue
+
+        # Preparar datos para el modelo
+        recent_data = market_data.iloc[-50:][['close']].values.reshape(1, 50, -1)
+
+        # Realizar predicción
+        try:
+            prediction = model.predict(recent_data)[0][0]
+        except Exception as e:
+            logging.error(f"Error en la predicción para {symbol}: {e}")
+            continue
+
+        current_price = market_data.iloc[-1]['close']
+        logging.info(f"Predicción en 5s para {symbol}: {prediction}, Precio actual: {current_price}")
+
+        # Determinar señal de compra o venta
+        if prediction > current_price:
+            logging.info(f"Señal de COMPRA para {symbol}")
+        elif prediction < current_price:
+            logging.info(f"Señal de VENTA para {symbol}")
+        else:
+            logging.info(f"No hay señal clara para {symbol}")
+
+        # Esperar 5 segundos y obtener el precio real
+        time.sleep(5)
+        actual_data = fetch_market_data(symbol, timeframe, limit=1)
+        if actual_data is None or len(actual_data) == 0:
+            logging.warning(f"No se pudo obtener el precio real para {symbol}")
+            continue
+
+        actual_price = actual_data.iloc[-1]['close']
+        logging.info(f"Precio real después de 5s para {symbol}: {actual_price}")
+
+        # Evaluar precisión de la predicción
+        error = abs(prediction - actual_price)
+        logging.info(f"Error de predicción: {error:.6f}")
+
+    # Apagar MetaTrader 5 al finalizar
+    mt5.shutdown()
+    logging.info("Ejecución completada.")
+
+if __name__ == "__main__":
+    main()
