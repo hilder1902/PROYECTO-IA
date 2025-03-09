@@ -1,0 +1,263 @@
+
+LA IA YA PREDICE PERO TIENE DEFICIENCIA, EL PROXIMO PASO SERIA DESCUBRIR CUALES SON Y COMO SE RESUELVEN
+
+
+
+
+
+
+
+
+".\mi_entorno_1\Scripts\Activate"
+
+"numero de cuenta" "197115903"
+
+"servidor" "Exness-MT5Trial11"
+
+".\mi_entorno_1\Scripts\Activate"
+
+import MetaTrader5 as mt5 
+import logging
+import time
+
+import tensorflow as tf
+from tensorflow import keras
+
+import scipy as sp
+import pandas as pd
+import numpy as np
+import os
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+
+from sklearn.model_selection import train_test_split, TimeSeriesSplit
+from sklearn.metrics import accuracy_score, mean_absolute_error
+from sklearn.preprocessing import MinMaxScaler
+
+# Definir capas de Keras
+Input = tf.keras.layers.Input
+LSTM = tf.keras.layers.LSTM
+Dense = tf.keras.layers.Dense
+Attention = tf.keras.layers.Attention
+Dropout = tf.keras.layers.Dropout
+
+# Importar modelos y optimizadores desde tf.keras
+Model = tf.keras.models.Model
+Sequential = tf.keras.models.Sequential
+Adam = tf.keras.optimizers.Adam
+EarlyStopping = tf.keras.callbacks.EarlyStopping
+
+import optuna
+
+
+
+
+
+
+
+
+import MetaTrader5 as mt5
+import tensorflow as tf
+import numpy as np
+import pandas as pd
+import pickle
+import time
+import logging
+
+def cargar_modelo():
+    """Carga el modelo desde un archivo o crea uno nuevo si no existe."""
+    try:
+        with open("modelo_entrenado.pkl", "rb") as f:
+            modelo = pickle.load(f)
+        logging.info("Modelo cargado correctamente.")
+    except (FileNotFoundError, EOFError):
+        logging.info("No se encontró un modelo entrenado. Creando uno nuevo...")
+        modelo = tf.keras.Sequential([
+            tf.keras.layers.LSTM(64, return_sequences=True, input_shape=(50, 1)),
+            tf.keras.layers.LSTM(32),
+            tf.keras.layers.Dense(16, activation="relu"),
+            tf.keras.layers.Dense(1)
+        ])
+        modelo.compile(optimizer="adam", loss="mse", metrics=["mae"])
+    return modelo
+
+def obtener_datos_mt5(simbolo, timeframe, n_candles):
+    """Obtiene los datos históricos desde MetaTrader 5."""
+    rates = mt5.copy_rates_from_pos(simbolo, timeframe, 0, n_candles)
+    if rates is None or len(rates) < n_candles:
+        logging.warning(f"No se pudieron obtener suficientes datos para {simbolo}.")
+        return None
+    return pd.DataFrame(rates)[['close']]
+
+def preparar_datos(df):
+    """Prepara los datos para el entrenamiento del modelo."""
+    X, y = [], []
+    for i in range(len(df) - 51):
+        X.append(df.iloc[i:i+50].values)
+        y.append(df.iloc[i+50].values)
+    return np.array(X), np.array(y)
+
+def entrenar_modelo(modelo, X_train, y_train):
+    """Entrena el modelo con los datos de entrenamiento."""
+    modelo.fit(X_train, y_train, epochs=10, batch_size=32, verbose=1)
+
+def evaluar_modelo(modelo, X_test, y_test):
+    """Evalúa la precisión del modelo."""
+    mae = modelo.evaluate(X_test, y_test, verbose=0)[1]
+    precision = max(1 - mae / np.mean(y_test), 0)
+    return precision
+
+def guardar_modelo(modelo):
+    """Guarda el modelo entrenado en un archivo."""
+    with open("modelo_entrenado.pkl", "wb") as f:
+        pickle.dump(modelo, f)
+    logging.info("Modelo guardado correctamente.")
+
+def hacer_prediccion(modelo, df):
+    """Realiza una predicción basada en los últimos 50 datos."""
+    recent_data = df.values.reshape(1, 50, -1)
+    return modelo.predict(recent_data)[0][0]
+
+def evaluar_prediccion(prediccion, actual):
+    """Calcula el error de predicción."""
+    return abs(prediccion - actual)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import MetaTrader5 as mt5
+import tensorflow as tf
+import numpy as np
+import pandas as pd
+import pickle
+import time
+import logging
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+def cargar_modelo():
+    """Carga el modelo desde un archivo o crea uno nuevo si no existe."""
+    try:
+        with open("modelo_entrenado.pkl", "rb") as f:
+            modelo = pickle.load(f)
+        logging.info("Modelo cargado correctamente.")
+    except (FileNotFoundError, EOFError):
+        logging.info("No se encontró un modelo entrenado. Creando uno nuevo...")
+        modelo = tf.keras.Sequential([
+            tf.keras.layers.LSTM(64, return_sequences=True, input_shape=(50, 1)),
+            tf.keras.layers.LSTM(32),
+            tf.keras.layers.Dense(16, activation="relu"),
+            tf.keras.layers.Dense(1)
+        ])
+        modelo.compile(optimizer="adam", loss="mse", metrics=["mae"])
+    return modelo
+
+def obtener_datos_mt5(simbolo, timeframe, n_candles):
+    """Obtiene los datos históricos desde MetaTrader 5."""
+    rates = mt5.copy_rates_from_pos(simbolo, timeframe, 0, n_candles)
+    if rates is None or len(rates) < n_candles:
+        logging.warning(f"No se pudieron obtener suficientes datos para {simbolo}. Pasando al siguiente...")
+        return None
+    return pd.DataFrame(rates)[['close']]
+
+def preparar_datos(df):
+    """Prepara los datos para el entrenamiento del modelo."""
+    X, y = [], []
+    for i in range(len(df) - 51):
+        X.append(df.iloc[i:i+50].values)
+        y.append(df.iloc[i+50].values)
+    return np.array(X), np.array(y)
+
+def main():
+    if not mt5.initialize():
+        logging.error("Error al inicializar MetaTrader 5.")
+        return
+
+    modelo = cargar_modelo()
+
+    for simbolo in ["EURUSDm", "GBPUSDm", "USDJPYm", "AUDUSDm", "USDCADm"]:
+        while True:
+            logging.info(f"Entrenando para {simbolo}...")
+            
+            df = obtener_datos_mt5(simbolo, mt5.TIMEFRAME_M1, 500)
+            if df is None:
+                break  # No se encontraron datos, pasar al siguiente símbolo.
+
+            X, y = preparar_datos(df)
+            if len(X) == 0:
+                logging.warning(f"Datos insuficientes para {simbolo}. Pasando al siguiente...")
+                break
+
+            split = int(len(X) * 0.8)
+            X_train, X_test, y_train, y_test = X[:split], X[split:], y[:split], y[split:]
+
+            modelo.fit(X_train, y_train, epochs=10, batch_size=32, verbose=1)
+            mae = modelo.evaluate(X_test, y_test, verbose=0)[1]
+            precision = max(1 - mae / np.mean(y_test), 0)
+
+            logging.info(f"Precisión para {simbolo}: {precision:.4f}")
+
+            if precision >= 0.86:
+                logging.info(f"Precisión suficiente para {simbolo}. Pasando al siguiente...")
+                break
+
+            logging.info(f"Reentrenando {simbolo} hasta alcanzar el 86%...")
+            time.sleep(10)
+
+    with open("modelo_entrenado.pkl", "wb") as f:
+        pickle.dump(modelo, f)
+    logging.info("Modelo guardado después de entrenar todos los símbolos.")
+
+    while True:
+        for simbolo in ["EURUSDm", "GBPUSDm", "USDJPYm", "AUDUSDm", "USDCADm"]:
+            logging.info(f"Iniciando predicción para {simbolo}...")
+
+            df = obtener_datos_mt5(simbolo, mt5.TIMEFRAME_M1, 50)
+            if df is None:
+                continue
+
+            recent_data = df.values.reshape(1, 50, -1)
+
+            try:
+                prediction = modelo.predict(recent_data)[0][0]
+            except Exception as e:
+                logging.error(f"Error en la predicción para {simbolo}: {e}")
+                continue
+
+            current_price = df.iloc[-1]['close']
+            logging.info(f"Predicción en 5s para {simbolo}: {prediction:.6f}, Precio actual: {current_price:.6f}")
+
+            if prediction > current_price:
+                logging.info(f"Señal de COMPRA para {simbolo}")
+            elif prediction < current_price:
+                logging.info(f"Señal de VENTA para {simbolo}")
+            else:
+                logging.info(f"No hay señal clara para {simbolo}")
+
+            time.sleep(5)
+            df_actual = obtener_datos_mt5(simbolo, mt5.TIMEFRAME_M1, 1)
+            if df_actual is None:
+                continue
+
+            actual_price = df_actual.iloc[-1]['close']
+            logging.info(f"Precio real después de 5s para {simbolo}: {actual_price:.6f}")
+
+            error = abs(prediction - actual_price)
+            logging.info(f"Error de predicción: {error:.6f}")
+
+    mt5.shutdown()
+    logging.info("MetaTrader 5 cerrado.")
+
+if __name__ == "__main__":
+    main()
