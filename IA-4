@@ -1,5 +1,5 @@
-"""LA IA YA PREDICE PERO TIENE DEFICIENCIA, EL PROXIMO PASO SERIA DESCUBRIR CUALES SON Y COMO SE RESUELVEN"""
-""" el CTRL +C SE EJECUTA PERO NO SIEMPRE Y NECECITO QUE SEA SIEMPRE"""
+
+""" CIERRA PERO ESTA MUY INCOMPLETO"""
 
 
 
@@ -7,81 +7,21 @@
 
 
 
-
-".\mi_entorno_1\Scripts\Activate"
-
-"numero de cuenta" "197115903"
-
-"servidor" "Exness-MT5Trial11"
-
-".\mi_entorno_1\Scripts\Activate"
-
-import MetaTrader5 as mt5 
-import logging
-import time
-
-import tensorflow as tf
-from tensorflow import keras
-
-import scipy as sp
-import pandas as pd
-import numpy as np
-import os
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
-
-from sklearn.model_selection import train_test_split, TimeSeriesSplit
-from sklearn.metrics import accuracy_score, mean_absolute_error
-from sklearn.preprocessing import MinMaxScaler
-
-# Definir capas de Keras
-Input = tf.keras.layers.Input
-LSTM = tf.keras.layers.LSTM
-Dense = tf.keras.layers.Dense
-Attention = tf.keras.layers.Attention
-Dropout = tf.keras.layers.Dropout
-
-# Importar modelos y optimizadores desde tf.keras
-Model = tf.keras.models.Model
-Sequential = tf.keras.models.Sequential
-Adam = tf.keras.optimizers.Adam
-EarlyStopping = tf.keras.callbacks.EarlyStopping
-
-import optuna
-
-
-
-
-
-
-
-
-import MetaTrader5 as mt5
-import tensorflow as tf
-import numpy as np
-import pandas as pd
-import pickle
-import time
-import logging
 
 import os
-import time
-import pickle
-import logging
 import signal
-import sys
 import threading
-from concurrent.futures import ThreadPoolExecutor
-
+import time
+import logging
+import pickle
 import numpy as np
 import pandas as pd
-import tensorflow as tf
 import MetaTrader5 as mt5
+import tensorflow as tf
 
-# Configurar logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Evento de salida
-# Evento para controlar la ejecución
 exit_event = threading.Event()
 
 def handle_exit(signum, frame):
@@ -138,136 +78,42 @@ def guardar_modelo(modelo):
         pickle.dump(modelo, f)
     logging.info("Modelo guardado correctamente.")
 
-
-
-
-
-
-
-
-import MetaTrader5 as mt5
-import logging
-import signal
-import time
-import os
-import numpy as np
-import pickle
-from concurrent.futures import ThreadPoolExecutor
-from threading import Event
-
-# Evento global para manejar la salida del programa
-exit_event = Event()
-
-def handle_exit(signum, frame):
-    """Maneja Ctrl + C y cierra todo inmediatamente."""
-    logging.info("Interrupción detectada (Ctrl + C). Cerrando el programa...")
-    exit_event.set()
-    mt5.shutdown()  # Cerrar MetaTrader 5
-    os._exit(0)  # Salida inmediata, sin esperar hilos o TensorFlow
-
-# Capturar señales de interrupción
-signal.signal(signal.SIGINT, handle_exit)
-signal.signal(signal.SIGTERM, handle_exit)
+def watch_for_exit():
+    """Espera a que se active exit_event y luego cierra la conexión."""
+    try:
+        while not exit_event.is_set():
+            time.sleep(1)
+    except KeyboardInterrupt:
+        logging.info("Interrupción detectada en watch_for_exit. Cerrando...")
+        exit_event.set()
 
 def main():
-    """Función principal del script."""
+    """Función principal que gestiona la ejecución del programa."""
+    logging.info("Iniciando el programa...")
+    
     if not mt5.initialize():
-        logging.error("Error al inicializar MetaTrader 5.")
+        logging.error("Error al inicializar MetaTrader 5")
         return
-
+    
     modelo = cargar_modelo()
-    executor = ThreadPoolExecutor(max_workers=1)
-
-    try:
-        for simbolo in ["EURUSDm", "GBPUSDm", "USDJPYm", "AUDUSDm", "USDCADm"]:
-            if exit_event.is_set():
-                break
-
-            logging.info(f"Entrenando para {simbolo}...")
-            df = obtener_datos_mt5(simbolo, mt5.TIMEFRAME_M1, 500)
-            if df is None:
-                continue
-
-            X, y = preparar_datos(df)
-            if len(X) == 0:
-                logging.warning(f"Datos insuficientes para {simbolo}. Pasando al siguiente...")
-                continue
-
-            split = int(len(X) * 0.8)
-            X_train, X_test, y_train, y_test = X[:split], X[split:], y[:split], y[split:]
-
-            future = executor.submit(entrenar_modelo, modelo, X_train, y_train)
-
-            while not future.done():
-                if exit_event.is_set():
-                    logging.info("Deteniendo entrenamiento...")
-                    mt5.shutdown()
-                    executor.shutdown(wait=False)  # Cierra los hilos sin esperar
-                    os._exit(0)  # Salida inmediata
-                time.sleep(1)
-
-            mae = modelo.evaluate(X_test, y_test, verbose=0)[1]
-            precision = max(1 - mae / np.mean(y_test), 0)
-
-            logging.info(f"Precisión para {simbolo}: {precision:.4f}")
-            if precision >= 0.86:
-                logging.info(f"Precisión suficiente para {simbolo}. Pasando al siguiente...")
-                continue
-
-        with open("modelo_entrenado.pkl", "wb") as f:
-            pickle.dump(modelo, f)
-        logging.info("Modelo guardado después de entrenar todos los símbolos.")
-
-        while not exit_event.is_set():
-            for simbolo in ["EURUSDm", "GBPUSDm", "USDJPYm", "AUDUSDm", "USDCADm"]:
-                if exit_event.is_set():
-                    break
-
-                logging.info(f"Iniciando predicción para {simbolo}...")
-                df = obtener_datos_mt5(simbolo, mt5.TIMEFRAME_M1, 50)
-                if df is None:
-                    continue
-
-                recent_data = df.values.reshape(1, 50, -1)
-
-                try:
-                    prediction = modelo.predict(recent_data)[0][0]
-                except Exception as e:
-                    logging.error(f"Error en la predicción para {simbolo}: {e}")
-                    continue
-
-                current_price = df.iloc[-1]['close']
-                logging.info(f"Predicción en 5s para {simbolo}: {prediction:.6f}, Precio actual: {current_price:.6f}")
-
-                if prediction > current_price:
-                    logging.info(f"Señal de COMPRA para {simbolo}")
-                elif prediction < current_price:
-                    logging.info(f"Señal de VENTA para {simbolo}")
-                else:
-                    logging.info(f"No hay señal clara para {simbolo}")
-
-                for _ in range(5):
-                    if exit_event.is_set():
-                        break
-                    time.sleep(1)
-
-                df_actual = obtener_datos_mt5(simbolo, mt5.TIMEFRAME_M1, 1)
-                if df_actual is None:
-                    continue
-
-                actual_price = df_actual.iloc[-1]['close']
-                logging.info(f"Precio real después de 5s para {simbolo}: {actual_price:.6f}")
-
-                error = abs(prediction - actual_price)
-                logging.info(f"Error de predicción: {error:.6f}")
-
-    except Exception as e:
-        logging.error(f"Ocurrió un error inesperado: {e}")
-    finally:
-        logging.info("Cerrando conexión con MetaTrader 5...")
-        mt5.shutdown()
-        executor.shutdown(wait=False)  # No espera a que los hilos terminen
-        os._exit(0)  # Fuerza salida inmediata sin bloqueo
+    simbolo = "EURUSDm"
+    timeframe = mt5.TIMEFRAME_M1
+    n_candles = 100
+    
+    datos = obtener_datos_mt5(simbolo, timeframe, n_candles)
+    if datos is None:
+        logging.error("No se pudieron obtener datos. Saliendo...")
+        return
+    
+    X_train, y_train = preparar_datos(datos)
+    
+    entrenamiento_thread = threading.Thread(target=entrenar_modelo, args=(modelo, X_train, y_train))
+    entrenamiento_thread.start()
+    
+    watch_for_exit()
+    entrenamiento_thread.join()
+    guardar_modelo(modelo)
+    logging.info("Programa finalizado correctamente.")
 
 if __name__ == "__main__":
     main()
