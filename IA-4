@@ -1,0 +1,313 @@
+
+
+""" YA CIERRA CON CTRL + C Y AHORA EL MODELO AJUSTA AUTOMATICAMENTE LOS HIPERPARAMETROS Y LAS EPOCAS PERO AUN NO LOGRA SUPERAR EL 86% EN USDJPYm , TOCA MEJORAR ESA PARTE """
+
+
+
+
+
+
+
+
+".\mi_entorno_1\Scripts\Activate"
+
+"numero de cuenta" "197115903"
+
+"servidor" "Exness-MT5Trial11"
+
+".\mi_entorno_1\Scripts\Activate"
+
+import MetaTrader5 as mt5 
+import logging
+import time
+
+import tensorflow as tf
+from tensorflow import keras
+
+import scipy as sp
+import pandas as pd
+import numpy as np
+import os
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+
+from sklearn.model_selection import train_test_split, TimeSeriesSplit
+from sklearn.metrics import accuracy_score, mean_absolute_error
+from sklearn.preprocessing import MinMaxScaler
+
+# Definir capas de Keras
+Input = tf.keras.layers.Input
+LSTM = tf.keras.layers.LSTM
+Dense = tf.keras.layers.Dense
+Attention = tf.keras.layers.Attention
+Dropout = tf.keras.layers.Dropout
+
+# Importar modelos y optimizadores desde tf.keras
+Model = tf.keras.models.Model
+Sequential = tf.keras.models.Sequential
+Adam = tf.keras.optimizers.Adam
+EarlyStopping = tf.keras.callbacks.EarlyStopping
+
+import optuna
+
+
+
+
+
+
+
+
+import MetaTrader5 as mt5
+import tensorflow as tf
+import numpy as np
+import pandas as pd
+import pickle
+import time
+import logging
+from sklearn.preprocessing import MinMaxScaler
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+scaler = MinMaxScaler(feature_range=(0, 1))
+
+def cargar_modelo():
+    """Carga el modelo desde un archivo o crea uno nuevo si no existe."""
+    try:
+        with open("modelo_entrenado.pkl", "rb") as f:
+            modelo = pickle.load(f)
+        logging.info("Modelo cargado correctamente.")
+    except (FileNotFoundError, EOFError):
+        logging.info("No se encontró un modelo entrenado. Creando uno nuevo...")
+        modelo = crear_nuevo_modelo()
+    return modelo
+
+def crear_nuevo_modelo(units_1=64, units_2=32, dense_units=16):
+    """Crea un nuevo modelo con hiperparámetros ajustables."""
+    modelo = tf.keras.Sequential([
+        tf.keras.layers.LSTM(units_1, return_sequences=True, input_shape=(50, 1)),
+        tf.keras.layers.LSTM(units_2),
+        tf.keras.layers.Dense(dense_units, activation="relu"),
+        tf.keras.layers.Dense(1)
+    ])
+    modelo.compile(optimizer="adam", loss="mse", metrics=["mae"])
+    return modelo
+
+def obtener_datos_mt5(simbolo, timeframe, n_candles):
+    """Obtiene los datos históricos desde MetaTrader 5."""
+    rates = mt5.copy_rates_from_pos(simbolo, timeframe, 0, n_candles)
+    if rates is None or len(rates) < n_candles:
+        logging.warning(f"No se pudieron obtener suficientes datos para {simbolo}.")
+        return None
+    df = pd.DataFrame(rates)[['close']]
+    df['close'] = scaler.fit_transform(df[['close']])  # Normalización de los datos
+    return df
+
+def preparar_datos(df):
+    """Prepara los datos para el entrenamiento del modelo."""
+    X, y = [], []
+    for i in range(len(df) - 50):
+        X.append(df.iloc[i:i+50].values)
+        y.append(df.iloc[i+50].values)
+    return np.array(X), np.array(y)
+
+def entrenar_modelo(modelo, X_train, y_train, X_test, y_test, precision_objetivo=0.86):
+    """Entrena el modelo con incremento automático de epochs y ajuste de hiperparámetros."""
+    epochs = 10
+    intentos = 0
+    mejor_precision = 0
+    mejor_modelo = None
+
+    while intentos < 5:
+        modelo.fit(X_train, y_train, epochs=epochs, batch_size=32, verbose=1)
+        precision = evaluar_modelo(modelo, X_test, y_test)
+        logging.info(f"Intento {intentos+1} - Precisión: {precision:.4f} - Épocas: {epochs}")
+        
+        if precision > mejor_precision:
+            mejor_precision = precision
+            mejor_modelo = modelo
+            guardar_modelo(mejor_modelo)
+
+        if precision >= precision_objetivo:
+            logging.info("Precisión objetivo alcanzada. Entrenamiento detenido.")
+            break
+        else:
+            epochs += 5  # Incremento progresivo de epochs
+            if intentos % 2 == 0:
+                logging.info("Reajustando hiperparámetros para mejorar el modelo...")
+                modelo = crear_nuevo_modelo(units_1=128, units_2=64, dense_units=32)
+            
+        intentos += 1
+
+    return mejor_modelo if mejor_modelo else modelo
+
+def evaluar_modelo(modelo, X_test, y_test):
+    """Evalúa la precisión del modelo."""
+    mae = modelo.evaluate(X_test, y_test, verbose=0)[1]
+    precision = max(1 - mae / np.mean(y_test), 0)
+    return precision
+
+def guardar_modelo(modelo):
+    """Guarda el modelo entrenado en un archivo."""
+    with open("modelo_entrenado.pkl", "wb") as f:
+        pickle.dump(modelo, f)
+    logging.info("Modelo guardado correctamente.")
+
+def hacer_prediccion(modelo, df):
+    """Realiza una predicción basada en los últimos 50 datos."""
+    recent_data = df[-50:].values.reshape(1, 50, -1)
+    prediccion = modelo.predict(recent_data)[0][0]
+    return scaler.inverse_transform([[prediccion]])[0][0]  # Desnormalización
+
+def evaluar_prediccion(prediccion, actual):
+    """Calcula el error de predicción."""
+    return abs(prediccion - actual)
+
+
+
+
+
+
+
+
+
+
+
+
+import time
+import logging
+import pickle
+import numpy as np
+import pandas as pd
+import MetaTrader5 as mt5
+import tensorflow as tf
+from sklearn.preprocessing import MinMaxScaler
+
+def main():
+    # Configurar logging
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+    # Inicializar MetaTrader 5
+    if not mt5.initialize():
+        logging.error("Error al inicializar MetaTrader 5.")
+        exit()
+
+    # Inicializar el escalador
+    scaler = MinMaxScaler(feature_range=(0, 1))
+
+    # Cargar o crear el modelo
+    try:
+        with open("modelo_entrenado.pkl", "rb") as f:
+            modelo = pickle.load(f)
+        logging.info("Modelo cargado correctamente.")
+    except (FileNotFoundError, EOFError):
+        logging.info("No se encontró un modelo entrenado. Creando uno nuevo...")
+        modelo = tf.keras.Sequential([
+            tf.keras.layers.LSTM(64, return_sequences=True, input_shape=(50, 1)),
+            tf.keras.layers.LSTM(32),
+            tf.keras.layers.Dense(16, activation="relu"),
+            tf.keras.layers.Dense(1)
+        ])
+        modelo.compile(optimizer="adam", loss="mse", metrics=["mae"])
+
+    pares_divisas = ["EURUSDm", "GBPUSDm", "USDJPYm", "AUDUSDm", "USDCADm"]
+
+    for simbolo in pares_divisas:
+        while True:
+            logging.info(f"Entrenando para {simbolo}...")
+            rates = mt5.copy_rates_from_pos(simbolo, mt5.TIMEFRAME_M1, 0, 500)
+            if rates is None or len(rates) < 500:
+                logging.warning(f"No se pudieron obtener suficientes datos para {simbolo}.")
+                break
+
+            df = pd.DataFrame(rates)[['close']]
+            df['close'] = scaler.fit_transform(df[['close']])
+
+            X, y = [], []
+            for i in range(len(df) - 50):
+                X.append(df.iloc[i:i+50].values)
+                y.append(df.iloc[i+50].values)
+            X, y = np.array(X), np.array(y)
+
+            if len(X) == 0:
+                logging.warning(f"Datos insuficientes para {simbolo}. Pasando al siguiente...")
+                break
+
+            split = int(len(X) * 0.8)
+            X_train, X_test, y_train, y_test = X[:split], X[split:], y[:split], y[split:]
+
+            epochs, intentos, mejor_precision = 10, 0, 0
+            mejor_modelo = None
+
+            while intentos < 5:
+                modelo.fit(X_train, y_train, epochs=epochs, batch_size=32, verbose=1)
+                mae = modelo.evaluate(X_test, y_test, verbose=0)[1]
+                precision = max(1 - mae / np.mean(y_test), 0)
+                logging.info(f"Intento {intentos+1} - Precisión: {precision:.4f} - Épocas: {epochs}")
+
+                if precision > mejor_precision:
+                    mejor_precision = precision
+                    mejor_modelo = modelo
+                    with open("modelo_entrenado.pkl", "wb") as f:
+                        pickle.dump(mejor_modelo, f)
+                    logging.info("Modelo guardado correctamente.")
+
+                if precision >= 0.86:
+                    logging.info("Precisión objetivo alcanzada. Entrenamiento detenido.")
+                    break
+                else:
+                    epochs += 5
+                    if intentos % 2 == 0:
+                        logging.info("Reajustando hiperparámetros...")
+                        modelo = tf.keras.Sequential([
+                            tf.keras.layers.LSTM(128, return_sequences=True, input_shape=(50, 1)),
+                            tf.keras.layers.LSTM(64),
+                            tf.keras.layers.Dense(32, activation="relu"),
+                            tf.keras.layers.Dense(1)
+                        ])
+                        modelo.compile(optimizer="adam", loss="mse", metrics=["mae"])
+
+                intentos += 1
+
+            if precision >= 0.86:
+                break
+
+            logging.info(f"Reentrenando {simbolo} hasta alcanzar el 86%...")
+            time.sleep(10)
+
+    logging.info("Modelo guardado después de entrenar todos los símbolos.")
+
+    while True:
+        for simbolo in pares_divisas:
+            logging.info(f"Iniciando predicción para {simbolo}...")
+            rates = mt5.copy_rates_from_pos(simbolo, mt5.TIMEFRAME_M1, 0, 50)
+            if rates is None:
+                continue
+
+            df = pd.DataFrame(rates)[['close']]
+            df['close'] = scaler.transform(df[['close']])
+
+            recent_data = df[-50:].values.reshape(1, 50, -1)
+            prediccion = modelo.predict(recent_data)[0][0]
+            prediccion_real = scaler.inverse_transform([[prediccion]])[0][0]
+
+            current_price = df.iloc[-1]['close']
+            logging.info(f"Predicción en 5s para {simbolo}: {prediccion_real:.6f}, Precio actual: {current_price:.6f}")
+
+            if prediccion_real > current_price:
+                logging.info(f"Señal de COMPRA para {simbolo}")
+            elif prediccion_real < current_price:
+                logging.info(f"Señal de VENTA para {simbolo}")
+            else:
+                logging.info(f"No hay señal clara para {simbolo}")
+
+            time.sleep(5)
+            df_actual = mt5.copy_rates_from_pos(simbolo, mt5.TIMEFRAME_M1, 0, 1)
+            if df_actual is None:
+                continue
+
+            actual_price = pd.DataFrame(df_actual)['close'].iloc[-1]
+            error = abs(prediccion_real - actual_price)
+            logging.info(f"Precio real después de 5s para {simbolo}: {actual_price:.6f}")
+            logging.info(f"Error de predicción: {error:.6f}")
+
+if __name__ == "__main__":
+    main()
