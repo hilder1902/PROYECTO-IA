@@ -1,0 +1,437 @@
+""" YA CIERRA CON CTRL + C, SE LE APLICO AJUSTE AUTOMATICO DE LOS HIPERAMETROS Y EPOCAS TMABIEN SE LE MEJORO: ✅ Escalado corregido: Ahora scaler solo se ajusta una vez y se reutiliza.
+✅ Regularización añadida: Dropout en las capas LSTM para reducir sobreajuste.
+✅ Cambio de función de pérdida: Huber Loss para mayor estabilidad.
+✅ Métrica mejorada: Se usa R² en lugar de una métrica arbitraria.
+✅ CAMBIE EL ENFOQUE DE PREDICCION POR UNO QUE PREDICE SI EL MERCADO EN 5 SEGUNDOS SUBE O BAJA, PARECE QUE FUNCIONA, ARREGLARE UN POCO EL CODIGO
+✅ YA LA IA SE ENTRENA Y PREDICE DESPUES DE ENTRENAR LAS PREDCCIONES LAS HACE BIEN PERO AUN LE FALTAN, Y SOLO DA SEÑALES DE COMPRA TOCA CONSTATAR SI TAMBIEN DA SEÑALES DE VENTA
+✅ YA CORREGI LOS MENSAJES DE VERIFICACION DE LA PREDICCION, TOCA REGTIFICAR EN PROXIMAS ACTUALIZACIONES  SI LAS PREDICCIONES SON CORRECTAS MEDIANTE EL PRECIO INCIAL Y FINAL 
+✅ YA CORREGI LA SALIDA DEL PRECIO DESPUES DE LOS 5 SEGUUNDOS, EL ERROR QUE HAY AHORA ES QUE LOS PRECIOS DE INCIO Y FINAL SON LOS MISMOS Y NO VARIAN
+✅ EN LA FUNCION DE PREDICCION Y EN LA DE EVALUAR LE AÑADI LA LOGICA INTERNA DE OBTENER EL PRECIO DIRECTAMENTE DE MT5 , ES DECIR LA OBTENCIO DEL PRECIO DE MT5 NO ES EXTERNA SE HACE DENTRO DE LA FUNCION
+✅ LE AGREGUE UNA MEJRO VERIFICACION A EVALUAR LA PREDICCION
+IA -12 """
+
+
+
+
+
+
+".\mi_entorno_1\Scripts\Activate"
+
+"numero de cuenta" "197115903"
+
+"servidor" "Exness-MT5Trial11"
+
+".\mi_entorno_1\Scripts\Activate"
+
+" promt:  actua como un programador señor experto en IA y trading algoritmico"
+
+import MetaTrader5 as mt5 
+import logging
+import time
+
+import tensorflow as tf
+from tensorflow import keras
+
+import scipy as sp
+import pandas as pd
+import numpy as np
+import os
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+
+from sklearn.model_selection import train_test_split, TimeSeriesSplit
+from sklearn.metrics import accuracy_score, mean_absolute_error
+from sklearn.preprocessing import MinMaxScaler
+
+# Definir capas de Keras
+Input = tf.keras.layers.Input
+LSTM = tf.keras.layers.LSTM
+Dense = tf.keras.layers.Dense
+Attention = tf.keras.layers.Attention
+Dropout = tf.keras.layers.Dropout
+
+# Importar modelos y optimizadores desde tf.keras
+Model = tf.keras.models.Model
+Sequential = tf.keras.models.Sequential
+Adam = tf.keras.optimizers.Adam
+EarlyStopping = tf.keras.callbacks.EarlyStopping
+
+
+import tensorflow as tf
+import numpy as np
+import pandas as pd
+import MetaTrader5 as mt5
+import pickle
+import logging
+from sklearn.preprocessing import MinMaxScaler
+
+scaler = MinMaxScaler(feature_range=(0, 1))
+
+
+
+
+
+
+
+
+
+
+import pickle
+import logging
+import numpy as np
+import pandas as pd
+import MetaTrader5 as mt5
+import tensorflow as tf
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import r2_score
+
+# ⚡ Buffer para almacenar errores pasados
+error_memoria = []
+
+scaler = StandardScaler()
+
+def cargar_modelo():
+    """Carga el modelo desde un archivo o crea uno nuevo si no existe."""
+    try:
+        with open("modelo_entrenado.pkl", "rb") as f:
+            modelo = pickle.load(f)
+        logging.info("Modelo cargado correctamente.")
+    except (FileNotFoundError, EOFError):
+        logging.info("No se encontró un modelo entrenado. Creando uno nuevo...")
+        modelo = crear_nuevo_modelo()
+    return modelo
+
+def crear_nuevo_modelo(units_1=64, units_2=32, dense_units=16, dropout_rate=0.2):
+    """Crea un nuevo modelo con hiperparámetros ajustables y regularización."""
+    modelo = tf.keras.Sequential([
+        tf.keras.layers.LSTM(units_1, return_sequences=True, input_shape=(50, 1)),
+        tf.keras.layers.Dropout(dropout_rate),
+        tf.keras.layers.LSTM(units_2),
+        tf.keras.layers.Dropout(dropout_rate),
+        tf.keras.layers.Dense(dense_units, activation="relu"),
+        tf.keras.layers.Dense(1)
+    ])
+    modelo.compile(optimizer="adam", loss=tf.keras.losses.Huber(delta=1.0), metrics=["mae"])
+    return modelo
+
+def obtener_datos_mt5(simbolo, timeframe, n_candles):
+    """Obtiene los datos históricos desde MetaTrader 5."""
+    rates = mt5.copy_rates_from_pos(simbolo, timeframe, 0, n_candles)
+    if rates is None or len(rates) < n_candles:
+        logging.warning(f"No se pudieron obtener suficientes datos para {simbolo}.")
+        return None
+    df = pd.DataFrame(rates)[['close']]
+    
+    if not hasattr(obtener_datos_mt5, "scaler_fitted"):
+        scaler.fit(df[['close']])
+        obtener_datos_mt5.scaler_fitted = True  # Evita reajustar en cada llamada
+    
+    df['close'] = scaler.transform(df[['close']])
+    return df
+
+def preparar_datos(df):
+    """Prepara los datos para el entrenamiento del modelo."""
+    X, y = [], []
+    for i in range(len(df) - 50):
+        X.append(df.iloc[i:i+50].values)
+        y.append(df.iloc[i+50].values)
+    return np.array(X), np.array(y)
+
+def entrenar_modelo(modelo, X_train, y_train, X_test, y_test, precision_objetivo=0.86):
+    """Entrena el modelo con auto-ajuste de hiperparámetros basado en errores pasados."""
+    global error_memoria
+    epochs = 10
+    intentos = 0
+    mejor_precision = 0
+    mejor_modelo = None
+
+    while intentos < 5:
+        modelo.fit(X_train, y_train, epochs=epochs, batch_size=32, verbose=1)
+        precision = evaluar_modelo(modelo, X_test, y_test)
+        logging.info(f"Intento {intentos+1} - Precisión: {precision:.4f} - Épocas: {epochs}")
+
+        if precision > mejor_precision:
+            mejor_precision = precision
+            mejor_modelo = modelo
+            guardar_modelo(mejor_modelo)
+
+        # 🔥 Aprendizaje de errores: si el error es alto, reentrenar con ajustes dinámicos
+        if error_memoria and np.mean(error_memoria[-10:]) > 0.01:
+            logging.info("⚡ Detectado alto error en predicciones recientes. Ajustando hiperparámetros...")
+            modelo = crear_nuevo_modelo(units_1=128, units_2=64, dense_units=32)
+
+        if precision >= precision_objetivo:
+            logging.info("✅ Precisión objetivo alcanzada. Entrenamiento detenido.")
+            break
+        else:
+            epochs += 5
+        intentos += 1
+
+    return mejor_modelo if mejor_modelo else modelo
+
+def evaluar_modelo(modelo, X_test, y_test):
+    """Evalúa la precisión del modelo usando R² en lugar de MAE."""
+    y_pred = modelo.predict(X_test)
+    r2 = r2_score(y_test, y_pred)
+    return r2
+
+def guardar_modelo(modelo):
+    """Guarda el modelo entrenado en un archivo."""
+    with open("modelo_entrenado.pkl", "wb") as f:
+        pickle.dump(modelo, f)
+    logging.info("💾 Modelo guardado correctamente.")
+
+import time
+
+import time
+import logging
+
+import MetaTrader5 as mt5
+import logging
+import time
+
+import MetaTrader5 as mt5
+import time
+import logging
+import numpy as np
+
+import time
+import logging
+import MetaTrader5 as mt5
+import numpy as np
+
+def hacer_prediccion(modelo, df, precio_actual, scaler, simbolo, tp=0.0001):
+    """Predice si el precio alcanzará el TP en los próximos 5 segundos."""
+    
+    # Obtener el precio actual desde MetaTrader 5 si no se proporciona
+    if precio_actual is None:
+        tick_info = mt5.symbol_info_tick(simbolo)
+        if tick_info:
+            precio_actual = tick_info.bid
+        else:
+            logging.error(f"No se pudo obtener el precio actual de {simbolo} desde MT5.")
+            return None, None, None
+
+    precio_inicio = precio_actual  # Guarda el precio al iniciar la predicción
+    recent_data = df[-50:].values.reshape(1, 50, -1)
+    prediccion = modelo.predict(recent_data)[0][0]
+
+    if hasattr(scaler, "min_") and hasattr(scaler, "scale_"):
+        prediccion_real = scaler.inverse_transform([[prediccion]])[0][0]
+    else:
+        logging.error("El scaler no ha sido ajustado antes de hacer inverse_transform.")
+        prediccion_real = prediccion  
+
+    logging.info(f"Predicción normalizada: {prediccion:.6f}, Predicción real: {prediccion_real:,.6f}")
+
+    tiempo_inicio = time.time()
+    while time.time() - tiempo_inicio < 5:
+        tick_info = mt5.symbol_info_tick(simbolo)
+        precio_actual = tick_info.bid if tick_info else None
+        
+        if precio_actual is None:
+            logging.warning(f"No se pudo obtener el precio actual de {simbolo}.")
+            break
+
+        if prediccion_real >= precio_inicio + tp:
+            logging.info(f"Precio inicial: {precio_inicio:,.5f}, Precio antes de los 5 segundos: {precio_actual:,.5f} (SUBE)")
+            time.sleep(5 - (time.time() - tiempo_inicio))  # Asegura que espere el tiempo restante
+            tick_info = mt5.symbol_info_tick(simbolo)
+            precio_final = tick_info.bid if tick_info else None
+            logging.info(f"Precio después de los 5 segundos: {precio_final:,.5f}")  
+            return 1, precio_inicio, precio_final
+
+        elif prediccion_real <= precio_inicio - tp:
+            logging.info(f"Precio inicial: {precio_inicio:,.5f}, Precio antes de los 5 segundos: {precio_actual:,.5f} (BAJA)")
+            time.sleep(5 - (time.time() - tiempo_inicio))  # Asegura que espere el tiempo restante
+            tick_info = mt5.symbol_info_tick(simbolo)
+            precio_final = tick_info.bid if tick_info else None
+            logging.info(f"Precio después de los 5 segundos: {precio_final:,.5f}")  
+            return 0, precio_inicio, precio_final
+
+        time.sleep(0.1)  # Reduce el uso de CPU
+
+    # 🔹 Espera los 5 segundos completos y obtiene el precio final
+    tick_info = mt5.symbol_info_tick(simbolo)
+    precio_final = tick_info.bid if tick_info else None
+    logging.info(f"Precio después de los 5 segundos: {precio_final:,.5f}")  
+
+    return None, precio_inicio, precio_final
+
+
+
+
+import numpy as np
+
+import MetaTrader5 as mt5
+import numpy as np
+
+import MetaTrader5 as mt5
+import time
+
+import time
+import MetaTrader5 as mt5
+
+import time
+import MetaTrader5 as mt5
+
+import time
+import MetaTrader5 as mt5
+
+import time
+import MetaTrader5 as mt5
+
+def evaluar_prediccion_binaria(prediccion, simbolo, precio_actual=None, tp=0.0001):
+    """
+    Evalúa si la predicción fue correcta en términos de alcanzar el TP.
+    Obtiene los precios futuros directamente desde MT5 y compara con el precio inicial.
+
+    :param prediccion: Dirección de la predicción (1 = subir, 0 = bajar)
+    :param simbolo: Símbolo del activo en MT5
+    :param precio_actual: Precio inicial desde hacer_prediccion (opcional, se obtiene de MT5 si es None)
+    :param tp: Take Profit en términos de diferencia de precio
+    :return: True si alcanzó TP, False en caso contrario
+    """
+
+    # Si el precio_actual no es válido, obtenerlo directamente desde MT5
+    if precio_actual is None or precio_actual <= 0:
+        tick_info = mt5.symbol_info_tick(simbolo)
+        if tick_info:
+            precio_actual = tick_info.bid
+            print(f"✔ Precio inicial obtenido de MT5: {precio_actual:,.5f}")
+        else:
+            print(f"❌ No se pudo obtener el precio inicial para {simbolo}.")
+            return False  # No se puede evaluar sin un precio inicial válido
+
+    print(f"\n📊 Evaluando predicción para {simbolo}:")
+    print(f"   - Precio inicial: {precio_actual:,.5f}")  # Mostrar precio con formato correcto
+
+    precios_futuros = {}
+
+    # Obtener los precios durante los próximos 5 segundos
+    for segundo in range(1, 6):
+        tick_info = mt5.symbol_info_tick(simbolo)
+        if tick_info:
+            precios_futuros[segundo] = tick_info.bid
+        else:
+            print(f"⚠ No se pudo obtener el precio en el segundo {segundo} para {simbolo}.")
+        time.sleep(1)  # Espera 1 segundo entre cada consulta
+
+    print(f"   - Precios capturados: { {seg: f'{precio:,.5f}' for seg, precio in precios_futuros.items()} }")
+
+    # Comparativa de precios
+    print("\n🔍 Comparativa de precios:")
+    for segundo, precio in precios_futuros.items():
+        diferencia = precio - precio_actual
+        print(f"   Segundo {segundo}: {precio:,.5f} (Diferencia: {diferencia:,.5f})")
+
+    # Evaluar si alcanzó el TP dentro de los 5 segundos
+    for segundo, precio in precios_futuros.items():
+        if prediccion == 1 and precio >= precio_actual + tp:
+            print(f"✅ Predicción correcta: El precio SUBIÓ y alcanzó el Take Profit (TP) en el segundo {segundo} con precio {precio:,.5f}.")
+            return True
+        elif prediccion == 0 and precio <= precio_actual - tp:
+            print(f"✅ Predicción correcta: El precio BAJÓ y alcanzó el Take Profit (TP) en el segundo {segundo} con precio {precio:,.5f}.")
+            return True
+
+    # Si después de 5 segundos no alcanzó el TP, la predicción es incorrecta
+    print("❌ Predicción incorrecta: No se alcanzó el Take Profit dentro del tiempo límite.")
+    return False
+
+
+
+def guardar_prediccion(archivo, simbolo, resultado, precio_futuro, precio_inicio):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(archivo, "a") as f:
+        f.write(f"{timestamp} | {simbolo} | {resultado} | Inicio: {precio_inicio:.6f} | Futuro: {precio_futuro:.6f}\n")
+
+def buscar_por_fecha(archivo, fecha):
+    with open(archivo, "r") as f:
+        lineas = f.readlines()
+    
+    resultados = [linea for linea in lineas if fecha in linea]
+    return resultados
+
+
+
+
+
+
+
+import logging
+import time
+import pickle
+import MetaTrader5 as mt5
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+from sklearn.preprocessing import MinMaxScaler
+
+import logging
+import MetaTrader5 as mt5
+import pandas as pd
+import time
+from sklearn.preprocessing import MinMaxScaler
+from datetime import datetime
+
+
+def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+    if not mt5.initialize():
+        logging.error("Error al inicializar MetaTrader 5.")
+        exit()
+    
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    modelo = cargar_modelo()
+    pares_divisas = ["BTCUSDm"]
+
+    logging.info("📊 Entrenando el modelo antes de predicciones en tiempo real...")
+    datos_historicos = obtener_datos_mt5("BTCUSDm", mt5.TIMEFRAME_M1, 5000)
+
+    if datos_historicos is not None and len(datos_historicos) > 50:
+        X, y = preparar_datos(datos_historicos)
+        split = int(len(X) * 0.8)
+        modelo = entrenar_modelo(modelo, X[:split], y[:split], X[split:], y[split:])
+        guardar_modelo(modelo)
+
+    logging.info("✅ Modelo entrenado. Iniciando predicciones en tiempo real...")
+
+    while True:
+        for simbolo in pares_divisas:
+            logging.info(f"Iniciando predicción para {simbolo}...")
+            rates = mt5.copy_rates_from_pos(simbolo, mt5.TIMEFRAME_M1, 0, 500)
+            if rates is None or len(rates) < 50:
+                logging.warning(f"No hay suficientes datos recientes para {simbolo}.")
+                continue
+
+            df = pd.DataFrame(rates)[['close']]
+            scaler.fit(df[['close']])  
+            df['close'] = scaler.transform(df[['close']])
+            precio_actual = df.iloc[-1]['close']
+
+            # ✅ Corrección: recibir los tres valores que devuelve la función
+            prediccion, precio_inicio, precio_final = hacer_prediccion(modelo, df, precio_actual, scaler, simbolo, tp=0.0001)
+
+            if prediccion == 1:
+                logging.info(f"📈 Señal de COMPRA para {simbolo}")
+            elif prediccion == 0:
+                logging.info(f"📉 Señal de VENTA para {simbolo}")
+            else:
+                logging.info(f"⏳ No hay señal clara para {simbolo}")
+
+            time.sleep(5)
+
+            df_actual = mt5.copy_rates_from_pos(simbolo, mt5.TIMEFRAME_M1, 0, 1)
+            if df_actual is None or len(df_actual) == 0:
+                continue
+
+            precio_futuro = pd.DataFrame(df_actual)['close'].iloc[-1]
+            resultado = evaluar_prediccion_binaria(prediccion, simbolo, precio_inicio)  # ✅ Corregido, pasamos `simbolo`
+
+            print(f"🔍 Resultado evaluación: {resultado}")
+
+            archivo = "correctas.txt" if resultado else "incorrectas.txt"
+            guardar_prediccion(archivo, simbolo, "CORRECTA" if resultado else "INCORRECTA", precio_futuro, precio_inicio)
+
+if __name__ == "__main__":
+    main()
