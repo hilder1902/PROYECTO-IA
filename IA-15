@@ -12,7 +12,7 @@
 ✅ LE AGREGUE UNA MEJRO VERIFICACION A EVALUAR LA PREDICCION
 ✅ MEJORE LA LEJIVILIDAD DEL PRECIO DA EL PRECIO ANTES Y DESPUES CORRECTAMENTE PERO LA EVALUCION LA HACE MAL
 ✅ YA EVALUA CORRECTAMENTE LAS OPERACIONES, EL ERROR AHORA ES QUE GURARDA LAS PREDICCIONES EN EL ACRICHO TXT INCORRECTO
-✅ YA LOS ARCHIVOS SE GUARDAN CORRECTAMENTE
+✅ YA LOS ARCHIVOS SE GUARDAN CORRECTAMENTE Y LOS BLOQUES ESTAN BIEN SEPERADOS
 IA -15 """
 
 
@@ -443,6 +443,7 @@ def main():
 
     while True:
         for simbolo in pares_divisas:
+            print("\n\n\n\n")  # Separación de 4 líneas después del bloque
             logging.info(f"Iniciando predicción para {simbolo}...")
 
             # Obtener los últimos 500 datos
@@ -455,7 +456,9 @@ def main():
             df = pd.DataFrame(rates)[['close']]
             scaler.fit(df[['close']])
             df['close'] = scaler.transform(df[['close']])
+            
 
+            
             # Hacer predicción con el modelo
             recent_data = df[-50:].values.reshape(1, 50, -1)
             prediccion = modelo.predict(recent_data)[0][0]
@@ -476,7 +479,7 @@ def main():
 
             logging.info(f"🔍 Resultado evaluación para {simbolo}: Dirección {direccion}, Precio objetivo {precio_final:.5f}")
             guardar_prediccion(simbolo, direccion, precio_final, precio_actual)
-
+            print("\n\n\n\n")  # Separación de 4 líneas después del bloque
 
 if __name__ == "__main__":
     main()
