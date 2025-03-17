@@ -1,4 +1,3 @@
-
 """ YA CIERRA CON CTRL + C, SE LE APLICO AJUSTE AUTOMATICO DE LOS HIPERAMETROS Y EPOCAS TMABIEN SE LE MEJORO: ✅ Escalado corregido: Ahora scaler solo se ajusta una vez y se reutiliza.
 ✅ Regularización añadida: Dropout en las capas LSTM para reducir sobreajuste.
 ✅ Cambio de función de pérdida: Huber Loss para mayor estabilidad.
@@ -320,58 +319,44 @@ def evaluar_prediccion_binaria(prediccion, simbolo, modelo, df, scaler, precio_a
 
 
 
-from datetime import datetime
 
-from datetime import datetime
 
-from datetime import datetime
 
-from datetime import datetime
-
-from datetime import datetime
-
-from datetime import datetime
-
-from datetime import datetime
-
-from datetime import datetime
-
-from datetime import datetime
-
-from datetime import datetime
-
-from datetime import datetime
-
-from datetime import datetime
-
-from datetime import datetime
-
-from datetime import datetime
 import re
 
 from datetime import datetime
 
 import time
 
+from datetime import datetime
+
 def guardar_prediccion(simbolo, direccion, precio_futuro, precio_inicio):
-    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Elegir el archivo según la dirección de la predicción
-    if direccion == "📈 SUBE":
-        archivo = "correctas.txt"
-    elif direccion == "📉 BAJA":
-        archivo = "incorrectas.txt"
-    else:  # 🟰 SIN CAMBIO
-        archivo = "sin_cambio.txt"
+    # Verificar si los valores son numéricos
+    try:
+        precio_inicio = float(precio_inicio)
+        precio_futuro = float(precio_futuro)
+    except ValueError:
+        print(f"❌ Error: precio_inicio ({precio_inicio}) o precio_futuro ({precio_futuro}) no son números válidos.")
+        return  # Evitamos escribir datos incorrectos
 
-    # Guardar la predicción en el archivo correspondiente
+    # Determinar si la predicción fue correcta
+    resultado = "INCORRECTA"
+    if (direccion == "📈 SUBE" and precio_futuro >= precio_inicio) or \
+       (direccion == "📉 BAJA" and precio_futuro <= precio_inicio):
+        resultado = "CORRECTA"
+
+    # Determinar en qué archivo guardar
+    archivo = "correctas.txt" if resultado == "CORRECTA" else "incorrectas.txt"
+
+    # Guardar en el archivo correspondiente con codificación UTF-8
     with open(archivo, "a", encoding="utf-8") as f:
-        f.write(f"{timestamp} | {simbolo} | {direccion} | Inicio: {precio_inicio:.6f} | Futuro: {precio_futuro:.6f}\n")
+        f.write(f"{timestamp} | {simbolo} | {direccion} | {resultado} | Inicio: {precio_inicio:.6f} | Futuro: {precio_futuro:.6f}\n")
 
-    print(f"✅ Predicción guardada en {archivo}: {direccion}")
+    print(f"✅ Predicción guardada en {archivo}: {direccion} ({resultado})")
 
 
-    
 
 
 def buscar_por_fecha(archivo, fecha):
@@ -480,4 +465,4 @@ def main():
             print("\n\n\n\n")  # Separación de 4 líneas después del bloque
 
 if __name__ == "__main__":
-    main()
+    main() 
