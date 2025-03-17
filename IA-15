@@ -1,3 +1,4 @@
+
 """ YA CIERRA CON CTRL + C, SE LE APLICO AJUSTE AUTOMATICO DE LOS HIPERAMETROS Y EPOCAS TMABIEN SE LE MEJORO: ✅ Escalado corregido: Ahora scaler solo se ajusta una vez y se reutiliza.
 ✅ Regularización añadida: Dropout en las capas LSTM para reducir sobreajuste.
 ✅ Cambio de función de pérdida: Huber Loss para mayor estabilidad.
@@ -262,13 +263,13 @@ def evaluar_prediccion_binaria(prediccion, simbolo, modelo, df, scaler, precio_a
 
     # Determinar dirección de la predicción
     if prediccion_real > precio_actual + tp:
-        direccion = "SUBE"
+        direccion = "📈 SUBE"
         precio_objetivo = precio_actual + tp  # Precio objetivo si sube
     elif prediccion_real < precio_actual - tp:
-        direccion = "BAJA"
+        direccion = "📉 BAJA"
         precio_objetivo = precio_actual - tp  # Precio objetivo si baja
     else:
-        direccion = "SIN CAMBIO"
+        direccion = "🟰 SIN CAMBIO"
         precio_objetivo = precio_actual  # Si la predicción está dentro del rango del TP
 
     logging.info(f"Precio actual: {precio_actual:,.5f}, Predicción: {direccion} (Objetivo TP: {precio_objetivo:,.5f})")
@@ -291,17 +292,21 @@ def evaluar_prediccion_binaria(prediccion, simbolo, modelo, df, scaler, precio_a
     print(f"   - Diferencia: {diferencia:,.5f}")
 
     # Evaluar si alcanzó el TP correctamente
-    if direccion == "SUBE":
+    if direccion == "📈 SUBE":
         if precio_final >= precio_actual + tp:
-            print(f"✅ Predicción correcta: El precio SUBIÓ y alcanzó el Take Profit (TP) con precio {precio_final:,.5f}.")
+            print(f"✅ Predicción correcta: El precio SUBIÓ y alcanzó el Take Profit (TP) con precio de {precio_final:,.5f}.\n precio inicial de {precio_actual:,.5f} y precio final de {precio_final:,.5f}")
+        elif precio_final <= precio_actual - tp:
+            print(f"⚠️ Predicción opuesta: Se esperaba que SUBIERA, pero el precio BAJÓ respecto al precio inicial. \n precio inicial de {precio_actual:,.5f} y precio final de {precio_final:,.5f}.")
         else:
-            print(f"❌ Predicción incorrecta: El precio NO SUBIÓ lo suficiente para alcanzar el TP.")
+            print(f"❌ Predicción incorrecta: El precio NO SUBIÓ lo suficiente para alcanzar el TP {precio_final:,.5f}. \n precio inicial de  {precio_actual:,.5f} y precio final de {precio_final:,.5f}")
 
-    elif direccion == "BAJA":
+    elif direccion == "📉 BAJA":
         if precio_final <= precio_actual - tp:
-            print(f"✅ Predicción correcta: El precio BAJÓ y alcanzó el Take Profit (TP) con precio {precio_final:,.5f}.")
+            print(f"✅ Predicción correcta: El precio BAJÓ y alcanzó el Take Profit (TP) con precio de {precio_final:,.5f}. \n precio inicial de {precio_actual:,.5f} y precio final de {precio_final:,.5f}")
+        elif precio_final >= precio_actual + tp:
+            print(f"⚠️ Predicción opuesta: Se esperaba que BAJARA, pero el precio SUBIÓ respecto  precio inicial. \n precio inicial de {precio_actual:,.5f} y precio final de {precio_final:,.5f}.")
         else:
-            print(f"❌ Predicción incorrecta: El precio NO BAJÓ lo suficiente para alcanzar el TP.")
+            print(f"❌ Predicción incorrecta: El precio NO BAJÓ lo suficiente para alcanzar el TP {precio_final:,.5f}.\n precio inicial de {precio_actual:,.5f} y precio final de  {precio_final:,.5f}")
 
     # Verificación final para evitar valores no numéricos
     if not isinstance(precio_actual, (int, float)) or not isinstance(precio_final, (int, float)):
@@ -309,6 +314,7 @@ def evaluar_prediccion_binaria(prediccion, simbolo, modelo, df, scaler, precio_a
         return precio_actual, direccion, None  # Retornar precio_actual y dirección, pero precio_final como None
 
     return precio_actual, direccion, precio_final
+
 
 
 
@@ -345,33 +351,27 @@ import re
 
 from datetime import datetime
 
+import time
+
 def guardar_prediccion(simbolo, direccion, precio_futuro, precio_inicio):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
 
-    # Verificar si los valores son numéricos
-    try:
-        precio_inicio = float(precio_inicio)
-        precio_futuro = float(precio_futuro)
-    except ValueError:
-        print(f"❌ Error: precio_inicio ({precio_inicio}) o precio_futuro ({precio_futuro}) no son números válidos.")
-        return  # Evitamos escribir datos incorrectos
+    # Elegir el archivo según la dirección de la predicción
+    if direccion == "📈 SUBE":
+        archivo = "correctas.txt"
+    elif direccion == "📉 BAJA":
+        archivo = "incorrectas.txt"
+    else:  # 🟰 SIN CAMBIO
+        archivo = "sin_cambio.txt"
 
-    # Determinar si la predicción fue correcta
-    resultado = "INCORRECTA"
-    if (direccion == "SUBE" and precio_futuro >= precio_inicio) or \
-       (direccion == "BAJA" and precio_futuro <= precio_inicio):
-        resultado = "CORRECTA"
+    # Guardar la predicción en el archivo correspondiente
+    with open(archivo, "a", encoding="utf-8") as f:
+        f.write(f"{timestamp} | {simbolo} | {direccion} | Inicio: {precio_inicio:.6f} | Futuro: {precio_futuro:.6f}\n")
 
-    # Determinar en qué archivo guardar
-    archivo = "correctas.txt" if resultado == "CORRECTA" else "incorrectas.txt"
-
-    # Guardar en el archivo correspondiente
-    with open(archivo, "a") as f:
-        f.write(f"{timestamp} | {simbolo} | {direccion} | {resultado} | Inicio: {precio_inicio:.6f} | Futuro: {precio_futuro:.6f}\n")
-
-    print(f"✅ Predicción guardada en {archivo}: {direccion} ({resultado})")
+    print(f"✅ Predicción guardada en {archivo}: {direccion}")
 
 
+    
 
 
 def buscar_por_fecha(archivo, fecha):
@@ -475,7 +475,7 @@ def main():
                 logging.warning(f"No se pudo obtener una predicción válida para {simbolo}.")
                 continue
 
-            logging.info(f"🔍 Resultado evaluación para {simbolo}: Dirección {direccion}, Precio objetivo {precio_final:.5f}")
+            
             guardar_prediccion(simbolo, direccion, precio_final, precio_actual)
             print("\n\n\n\n")  # Separación de 4 líneas después del bloque
 
