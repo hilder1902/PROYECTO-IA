@@ -490,6 +490,14 @@ import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 from sklearn.preprocessing import MinMaxScaler
 
+import time
+import logging
+import MetaTrader5 as mt5
+import pandas as pd
+import numpy as np
+from concurrent.futures import ThreadPoolExecutor
+from sklearn.preprocessing import MinMaxScaler
+
 def predecir_todos_los_simbolos(modelo, dfs, simbolos, tp=0.0001):
     """
     Realiza predicciones en paralelo para todos los símbolos.
@@ -571,6 +579,15 @@ def main():
     scaler = MinMaxScaler(feature_range=(0, 1))
     modelo = cargar_modelo()  # Asegúrate de que esta función esté definida
     pares_divisas = ["EURUSDm", "GBPUSDm", "USDJPYm"]
+
+    logging.info("📊 Entrenando el modelo antes de predicciones en tiempo real...")
+    datos_historicos = obtener_datos_mt5("BTCUSDm", mt5.TIMEFRAME_M1, 5000)
+
+    if datos_historicos is not None and len(datos_historicos) > 50:
+        X, y = preparar_datos(datos_historicos)
+        split = int(len(X) * 0.8)
+        modelo = entrenar_modelo(modelo, X[:split], y[:split], X[split:], y[split:])
+        guardar_modelo(modelo)
 
     logging.info("✅ Modelo cargado. Iniciando predicciones en tiempo real...")
 
