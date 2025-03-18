@@ -286,7 +286,7 @@ def evaluar_prediccion_binaria(prediccion, simbolo, modelo, df, scaler, precio_a
         return precio_actual, direccion, None  # Retornar precio_actual y dirección, pero precio_final como None
 
     # Comparativa de precios
-    diferencia = precio_final - precio_actual
+    diferencia = precio_actual - precio_final 
     print("\n🔍 Comparativa de precios:")
     print(f"   - Diferencia: {diferencia:,.5f}")
 
