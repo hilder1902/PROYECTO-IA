@@ -11,7 +11,7 @@
 ✅ MEJORE LA LEJIVILIDAD DEL PRECIO DA EL PRECIO ANTES Y DESPUES CORRECTAMENTE PERO LA EVALUCION LA HACE MAL
 ✅ YA EVALUA CORRECTAMENTE LAS OPERACIONES, EL ERROR AHORA ES QUE GURARDA LAS PREDICCIONES EN EL ACRICHO TXT INCORRECTO
 ✅ YA LOS ARCHIVOS SE GUARDAN CORRECTAMENTE Y LOS BLOQUES ESTAN BIEN SEPARADOS
-✅ OPERA EN PARALELO MULTIPLES SIMBOLOS, YA VERIFIQUE, PERO AUN NO HACE LAS PREDICCIONES TODAS AL MISMO TIEMPO
+✅ OPERA EN PARALELO MULTIPLES SIMBOLOS, YA VERIFIQUE, PERO AUN NO HACE LAS PREDICCIONES TODAS AL MISMO TIEMPO, LE AGREGUE DIFERENCIACION DE CENTAVOS, DOLAR Y DOLARES CON LA DIFRENCIA
 IA -16 """
 
 
@@ -302,6 +302,21 @@ def evaluar_prediccion_binaria(prediccion, simbolos, modelo, dfs, scaler, precio
             print(f"⚠ Error: No se pudo obtener un precio final válido para {simbolo}.")
             return simbolo, precio_actual, direccion, None  
 
+
+        # Comparativa de precios
+        diferencia = precio_actual - precio_final  
+        print("\n🔍 Comparativa de precios:")
+
+        if diferencia == 0:
+          print("   - No hay diferencia de precio.")
+        elif abs(diferencia) < 1:
+         diferencia *= 100  # Convertir a centavos
+         print(f"   - Diferencia de: {diferencia:,.2f} centavos de dólar")
+        elif abs(diferencia) == 1:
+          print("   - Diferencia de: 1 dólar")
+        else:
+         print(f"   - Diferencia de: {abs(diferencia):,.5f} dólares")
+
         # Evaluar si alcanzó el TP correctamente
         if direccion == "📈 SUBE":
             if precio_final >= precio_actual + tp:
@@ -353,29 +368,34 @@ import time
 
 from datetime import datetime
 
-def guardar_prediccion(simbolo, direccion, precio_futuro, precio_inicio):
+import locale
+from datetime import datetime
+
+# Configurar el formato numérico americano (si el sistema lo soporta)
+locale.setlocale(locale.LC_NUMERIC, "en_US.UTF-8")
+
+def formatear_precio(precio):
+    return locale.format_string("%.6f", precio, grouping=True).replace(",", "X").replace(".", ",").replace("X", ".")
+
+def guardar_prediccion(simbolo, direccion, precio_final, precio_actual):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Verificar si los valores son numéricos
     try:
-        precio_inicio = float(precio_inicio)
-        precio_futuro = float(precio_futuro)
+        precio_actual = float(precio_actual)
+        precio_futuro = float(precio_final)
     except ValueError:
-        print(f"❌ Error: precio_inicio ({precio_inicio}) o precio_futuro ({precio_futuro}) no son números válidos.")
-        return  # Evitamos escribir datos incorrectos
+        print(f"❌ Error: precio_inicio ({precio_actual}) o precio_futuro ({precio_futuro}) no son números válidos.")
+        return  
 
-    # Determinar si la predicción fue correcta
     resultado = "INCORRECTA"
-    if (direccion == "📈 SUBE" and precio_futuro >= precio_inicio) or \
-       (direccion == "📉 BAJA" and precio_futuro <= precio_inicio):
+    if (direccion == "📈 SUBE" and precio_final >= precio_actual) or \
+       (direccion == "📉 BAJA" and precio_final <= precio_actual):
         resultado = "CORRECTA"
 
-    # Determinar en qué archivo guardar
     archivo = "correctas.txt" if resultado == "CORRECTA" else "incorrectas.txt"
 
-    # Guardar en el archivo correspondiente con codificación UTF-8
     with open(archivo, "a", encoding="utf-8") as f:
-        f.write(f"{timestamp} | {simbolo} | {direccion} | {resultado} | Inicio: {precio_inicio:.6f} | Futuro: {precio_futuro:.6f}\n")
+        f.write(f"{timestamp} | {simbolo} | {direccion} | {resultado} | precio actual: {formatear_precio(precio_actual)} | presio final: {formatear_precio(precio_final)}\n")
 
     print(f"✅ Predicción guardada en {archivo}: {direccion} ({resultado})")
 
@@ -491,11 +511,11 @@ def main():
 
             # Guardar la predicción
             guardar_prediccion(simbolo, direccion, precio_final, precio_actual)
-            logging.info(f"✅ Predicción guardada para {simbolo}: {direccion} hasta {precio_final} (actual: {precio_actual})")
-
             print("\n\n\n\n")  # Separación de 4 líneas después del bloque
+
+            
         
         sleep(1)  # Pequeña pausa para evitar sobrecarga
 
 if __name__ == "__main__":
-    main()
+    main() 
