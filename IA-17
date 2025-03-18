@@ -1,4 +1,3 @@
-
 """ YA CIERRA CON CTRL + C, SE LE APLICO AJUSTE AUTOMATICO DE LOS HIPERAMETROS Y EPOCAS TMABIEN SE LE MEJORO: ✅ Escalado corregido: Ahora scaler solo se ajusta una vez y se reutiliza.
 ✅ Regularización añadida: Dropout en las capas LSTM para reducir sobreajuste.
 ✅ Cambio de función de pérdida: Huber Loss para mayor estabilidad.
@@ -13,7 +12,7 @@
 ✅ YA EVALUA CORRECTAMENTE LAS OPERACIONES, EL ERROR AHORA ES QUE GURARDA LAS PREDICCIONES EN EL ACRICHO TXT INCORRECTO
 ✅ YA LOS ARCHIVOS SE GUARDAN CORRECTAMENTE Y LOS BLOQUES ESTAN BIEN SEPARADOS
 ✅ OPERA EN PARALELO MULTIPLES SIMBOLOS, YA VERIFIQUE, PERO AUN NO HACE LAS PREDICCIONES TODAS AL MISMO TIEMPO, LE AGREGUE DIFERENCIACION DE CENTAVOS, DOLAR Y DOLARES CON LA DIFRENCIA
-✅ YA PREDICE TODO JUNTO PERO LE FALTA ORDEN 
+✅ YA PREDICE TODO, YA SALE TODO EN ORDEN Y CON TODOS LOS SIMBOLOS PERO NECECITO QUE SEAN LOS MISMOS MENSAJES, TOCA CAMBIAR ALGUNAS COSAS
 IA -17 """
 
 
@@ -460,7 +459,38 @@ from time import sleep
 from sklearn.preprocessing import MinMaxScaler
 from concurrent.futures import ThreadPoolExecutor
 
-def predecir_todos_los_simbolos(modelo, dfs, scaler, simbolos, tp=0.0001):
+import MetaTrader5 as mt5
+import pandas as pd
+import logging
+import time
+from concurrent.futures import ThreadPoolExecutor
+from sklearn.preprocessing import MinMaxScaler
+
+import time
+import logging
+import MetaTrader5 as mt5
+import pandas as pd
+import numpy as np
+from concurrent.futures import ThreadPoolExecutor
+from sklearn.preprocessing import MinMaxScaler
+
+import MetaTrader5 as mt5
+import pandas as pd
+import numpy as np
+import time
+import logging
+from concurrent.futures import ThreadPoolExecutor
+from sklearn.preprocessing import MinMaxScaler
+
+import time
+import logging
+import MetaTrader5 as mt5
+import pandas as pd
+import numpy as np
+from concurrent.futures import ThreadPoolExecutor
+from sklearn.preprocessing import MinMaxScaler
+
+def predecir_todos_los_simbolos(modelo, dfs, simbolos, tp=0.0001):
     """
     Realiza predicciones en paralelo para todos los símbolos.
     """
@@ -468,30 +498,68 @@ def predecir_todos_los_simbolos(modelo, dfs, scaler, simbolos, tp=0.0001):
 
     def procesar_simbolo(simbolo):
         try:
-            prediccion = modelo.predict(dfs[simbolo][-50:].values.reshape(1, 50, -1))[0][0]
-            resultados = evaluar_prediccion_binaria(
-                prediccion={simbolo: prediccion},
-                simbolos=[simbolo],
-                modelo=modelo,
-                dfs={simbolo: dfs[simbolo]},
-                scaler=scaler,
-                tp=tp
-            )
-            return simbolo, resultados.get(simbolo, (None, None, None))
+            if simbolo not in dfs or dfs[simbolo].empty:
+                logging.warning(f"⚠️ No hay datos suficientes para {simbolo}.")
+                return simbolo, None, None, None
+
+            precio_actual = dfs[simbolo]['close'].iloc[-1]
+            datos_entrada = dfs[simbolo][-50:].values.reshape(1, 50, -1)
+
+            prediccion = modelo.predict(datos_entrada)[0][0]
+            direccion = "📈 SUBE" if prediccion > 0.5 else "📉 BAJA"
+            precio_objetivo = precio_actual + tp if prediccion > 0.5 else precio_actual - tp
+            
+            return simbolo, precio_actual, direccion, precio_objetivo
+
         except Exception as e:
             logging.warning(f"⚠️ Error al procesar {simbolo}: {str(e)}")
-            return simbolo, (None, None, None)
+            return simbolo, None, None, None
 
     with ThreadPoolExecutor(max_workers=len(simbolos)) as executor:
         futuros = {executor.submit(procesar_simbolo, simbolo): simbolo for simbolo in simbolos}
 
         for futuro in futuros:
-            simbolo, (precio_actual, direccion, precio_final) = futuro.result()
-            if precio_actual is not None and direccion is not None and precio_final is not None:
-                guardar_prediccion(simbolo, direccion, precio_final, precio_actual)
-                resultados_globales[simbolo] = (precio_actual, direccion, precio_final)
+            simbolo, precio_actual, direccion, precio_objetivo = futuro.result()
+            if precio_actual is not None:
+                logging.info(f"✔ Precio inicial de {simbolo}: {precio_actual:.5f}")
+                resultados_globales[simbolo] = (precio_actual, direccion, precio_objetivo)
 
-    return resultados_globales
+    if not resultados_globales:
+        logging.warning("❌ No se realizaron predicciones debido a falta de datos.")
+        return
+
+    logging.info("\n⏳ Esperando 5 segundos para evaluar el resultado...\n")
+    time.sleep(5)
+
+    resultados_futuros = {}
+    for simbolo in resultados_globales.keys():
+        rates = mt5.copy_rates_from_pos(simbolo, mt5.TIMEFRAME_M1, 0, 1)
+        if rates is not None and len(rates) > 0:
+            precio_final = rates[0]['close']
+            logging.info(f"✔ Precio después de 5 segundos ({simbolo}): {precio_final:.5f}")
+            resultados_futuros[simbolo] = precio_final
+
+    logging.info("\n🔍 Comparativa de precios:")
+    for simbolo in resultados_globales:
+        if simbolo in resultados_futuros:
+            precio_inicial = resultados_globales[simbolo][0]
+            precio_final = resultados_futuros[simbolo]
+            diferencia = precio_final - precio_inicial
+            logging.info(f"   - Diferencia de {diferencia:.5f} para {simbolo}")
+
+    logging.info("\n")
+    for simbolo in resultados_globales:
+        if simbolo in resultados_futuros:
+            precio_inicial = resultados_globales[simbolo][0]
+            direccion = resultados_globales[simbolo][1]
+            precio_final = resultados_futuros[simbolo]
+            objetivo_tp = resultados_globales[simbolo][2]
+
+            if (direccion == "📈 SUBE" and precio_final >= objetivo_tp) or (direccion == "📉 BAJA" and precio_final <= objetivo_tp):
+                logging.info(f"✅ Predicción correcta para {simbolo}: {direccion} y alcanzó el TP.")
+            else:
+                logging.warning(f"❌ Predicción incorrecta para {simbolo}: NO {direccion}.")
+            logging.info(f"   Precio inicial: {precio_inicial:.5f}, Precio final: {precio_final:.5f}\n")
 
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -499,43 +567,37 @@ def main():
     if not mt5.initialize():
         logging.error("❌ Error al inicializar MetaTrader 5.")
         exit()
-    
+
     scaler = MinMaxScaler(feature_range=(0, 1))
-    modelo = cargar_modelo()
-    pares_divisas = ["BTCUSDm", "BTCZARm", "BTCCNHm"]
+    modelo = cargar_modelo()  # Asegúrate de que esta función esté definida
+    pares_divisas = ["EURUSDm", "GBPUSDm", "USDJPYm"]
 
-    logging.info("📊 Entrenando el modelo antes de predicciones en tiempo real...")
-    datos_historicos = obtener_datos_mt5("BTCUSDm", mt5.TIMEFRAME_M1, 5000)
-
-    if datos_historicos is not None and len(datos_historicos) > 50:
-        X, y = preparar_datos(datos_historicos)
-        split = int(len(X) * 0.8)
-        modelo = entrenar_modelo(modelo, X[:split], y[:split], X[split:], y[split:])
-        guardar_modelo(modelo)
-
-    logging.info("✅ Modelo entrenado. Iniciando predicciones en tiempo real...")
+    logging.info("✅ Modelo cargado. Iniciando predicciones en tiempo real...")
 
     while True:
-        print("\n\n\n\n")  # Separación visual en consola
+        logging.info("\n" + "="*50)
         logging.info("🔍 Iniciando predicciones para todos los símbolos...")
 
-        # Obtener los datos más recientes
         dfs = {}
         for simbolo in pares_divisas:
             rates = mt5.copy_rates_from_pos(simbolo, mt5.TIMEFRAME_M1, 0, 500)
             if rates is None or len(rates) < 50:
                 logging.warning(f"⚠️ No hay suficientes datos recientes para {simbolo}.")
                 continue
+
             df = pd.DataFrame(rates)[['close']]
-            df['close'] = scaler.fit_transform(df[['close']])  # Normalización
+
+            # ✅ Ajustamos el scaler con los datos antes de transformar
+            scaler.fit(df[['close']])  
+            df['close'] = scaler.transform(df[['close']])  
+
             dfs[simbolo] = df
 
-        # Realizar predicciones para todos los símbolos en paralelo
         if dfs:
-            predecir_todos_los_simbolos(modelo, dfs, scaler, list(dfs.keys()))
+            predecir_todos_los_simbolos(modelo, dfs, list(dfs.keys()))
 
-        print("\n\n\n\n")  # Separación visual en consola
-        sleep(1)  # Pequeña pausa para evitar sobrecarga
+        logging.info("\n" + "="*50)
+        time.sleep(5)  # Aumenta la pausa para evitar sobrecarga
 
 if __name__ == "__main__":
     main()
