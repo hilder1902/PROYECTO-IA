@@ -231,6 +231,12 @@ import MetaTrader5 as mt5
 import time
 import logging
 
+import time
+import logging
+import numpy as np
+import concurrent.futures
+import MetaTrader5 as mt5
+
 def evaluar_prediccion_binaria(prediccion, simbolos, modelo, dfs, scaler, precios_actuales=None, tp=0.0001):
     """
     Evalúa las predicciones de múltiples símbolos en paralelo.
@@ -296,31 +302,26 @@ def evaluar_prediccion_binaria(prediccion, simbolos, modelo, dfs, scaler, precio
             print(f"⚠ Error: No se pudo obtener un precio final válido para {simbolo}.")
             return simbolo, precio_actual, direccion, None  
 
-        # Comparativa de precios
-        diferencia = precio_final - precio_actual
-        print(f"\n🔍 Comparativa de precios ({simbolo}):")
-        print(f"   - Diferencia: {diferencia:,.5f}")
-
         # Evaluar si alcanzó el TP correctamente
         if direccion == "📈 SUBE":
             if precio_final >= precio_actual + tp:
-                print(f"✅ {simbolo}: Predicción correcta. El precio SUBIÓ y alcanzó el TP ({precio_final:,.5f}).")
+                print(f"✅ Predicción correcta: El precio SUBIÓ y alcanzó el Take Profit (TP) con precio de {precio_final:,.5f}.\n Precio inicial: {precio_actual:,.5f}, Precio final: {precio_final:,.5f}")
             elif precio_final <= precio_actual - tp:
-                print(f"⚠️ {simbolo}: Predicción opuesta. Se esperaba que SUBIERA, pero el precio BAJÓ.")
+                print(f"⚠️ Predicción opuesta: Se esperaba que SUBIERA, pero el precio BAJÓ.\n Precio inicial: {precio_actual:,.5f}, Precio final: {precio_final:,.5f}")
             else:
-                print(f"❌ {simbolo}: Predicción incorrecta. No alcanzó el TP ({precio_final:,.5f}).")
+                print(f"❌ Predicción incorrecta: El precio NO SUBIÓ lo suficiente para alcanzar el TP.\n Precio inicial: {precio_actual:,.5f}, Precio final: {precio_final:,.5f}")
 
         elif direccion == "📉 BAJA":
             if precio_final <= precio_actual - tp:
-                print(f"✅ {simbolo}: Predicción correcta. El precio BAJÓ y alcanzó el TP ({precio_final:,.5f}).")
+                print(f"✅ Predicción correcta: El precio BAJÓ y alcanzó el Take Profit (TP) con precio de {precio_final:,.5f}.\n Precio inicial: {precio_actual:,.5f}, Precio final: {precio_final:,.5f}")
             elif precio_final >= precio_actual + tp:
-                print(f"⚠️ {simbolo}: Predicción opuesta. Se esperaba que BAJARA, pero el precio SUBIÓ.")
+                print(f"⚠️ Predicción opuesta: Se esperaba que BAJARA, pero el precio SUBIÓ.\n Precio inicial: {precio_actual:,.5f}, Precio final: {precio_final:,.5f}")
             else:
-                print(f"❌ {simbolo}: Predicción incorrecta. No alcanzó el TP ({precio_final:,.5f}).")
+                print(f"❌ Predicción incorrecta: El precio NO BAJÓ lo suficiente para alcanzar el TP.\n Precio inicial: {precio_actual:,.5f}, Precio final: {precio_final:,.5f}")
 
-        # Verificación final
+        # Verificación final para evitar valores no numéricos
         if not isinstance(precio_actual, (int, float)) or not isinstance(precio_final, (int, float)):
-            print(f"❌ {simbolo}: Error de valores numéricos. precio_actual={precio_actual}, precio_final={precio_final}")
+            print(f"❌ Error: precio_actual ({precio_actual}) o precio_final ({precio_final}) no son números válidos.")
             return simbolo, precio_actual, direccion, None  
 
         return simbolo, precio_actual, direccion, precio_final  
@@ -332,7 +333,7 @@ def evaluar_prediccion_binaria(prediccion, simbolos, modelo, dfs, scaler, precio
             simbolo, precio_actual, direccion, precio_final = futuro.result()
             resultados[simbolo] = (precio_actual, direccion, precio_final)
 
-    return resultados
+    return resultados  
 
 
 
@@ -439,7 +440,7 @@ def main():
     
     scaler = MinMaxScaler(feature_range=(0, 1))
     modelo = cargar_modelo()
-    pares_divisas = ["BTCUSDm"]
+    pares_divisas = ["BTCUSDm", "BTCZARm", "BTCCNHm"]
 
     logging.info("📊 Entrenando el modelo antes de predicciones en tiempo real...")
     datos_historicos = obtener_datos_mt5("BTCUSDm", mt5.TIMEFRAME_M1, 5000)
