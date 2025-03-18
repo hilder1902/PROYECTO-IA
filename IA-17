@@ -1,3 +1,4 @@
+
 """ YA CIERRA CON CTRL + C, SE LE APLICO AJUSTE AUTOMATICO DE LOS HIPERAMETROS Y EPOCAS TMABIEN SE LE MEJORO: ✅ Escalado corregido: Ahora scaler solo se ajusta una vez y se reutiliza.
 ✅ Regularización añadida: Dropout en las capas LSTM para reducir sobreajuste.
 ✅ Cambio de función de pérdida: Huber Loss para mayor estabilidad.
@@ -416,85 +417,12 @@ def buscar_por_fecha(archivo, fecha):
 
 
 
+
+
 import logging
 import time
-import pickle
-import MetaTrader5 as mt5
-import numpy as np
 import pandas as pd
-import tensorflow as tf
-from sklearn.preprocessing import MinMaxScaler
-
-import logging
 import MetaTrader5 as mt5
-import pandas as pd
-import time
-from sklearn.preprocessing import MinMaxScaler
-from datetime import datetime
-
-
-import time
-import logging
-import MetaTrader5 as mt5
-import pandas as pd
-import numpy as np
-from sklearn.preprocessing import MinMaxScaler
-
-import time
-import logging
-import MetaTrader5 as mt5
-import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
-
-import logging
-import MetaTrader5 as mt5
-import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
-from time import sleep
-
-import logging
-import MetaTrader5 as mt5
-import pandas as pd
-from time import sleep
-from sklearn.preprocessing import MinMaxScaler
-from concurrent.futures import ThreadPoolExecutor
-
-import MetaTrader5 as mt5
-import pandas as pd
-import logging
-import time
-from concurrent.futures import ThreadPoolExecutor
-from sklearn.preprocessing import MinMaxScaler
-
-import time
-import logging
-import MetaTrader5 as mt5
-import pandas as pd
-import numpy as np
-from concurrent.futures import ThreadPoolExecutor
-from sklearn.preprocessing import MinMaxScaler
-
-import MetaTrader5 as mt5
-import pandas as pd
-import numpy as np
-import time
-import logging
-from concurrent.futures import ThreadPoolExecutor
-from sklearn.preprocessing import MinMaxScaler
-
-import time
-import logging
-import MetaTrader5 as mt5
-import pandas as pd
-import numpy as np
-from concurrent.futures import ThreadPoolExecutor
-from sklearn.preprocessing import MinMaxScaler
-
-import time
-import logging
-import MetaTrader5 as mt5
-import pandas as pd
-import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 from sklearn.preprocessing import MinMaxScaler
 
@@ -517,6 +445,7 @@ def predecir_todos_los_simbolos(modelo, dfs, simbolos, tp=0.0001):
             direccion = "📈 SUBE" if prediccion > 0.5 else "📉 BAJA"
             precio_objetivo = precio_actual + tp if prediccion > 0.5 else precio_actual - tp
             
+            logging.info(f"✔ Precio inicial obtenido de MT5 ({simbolo}): {precio_actual:.5f}")
             return simbolo, precio_actual, direccion, precio_objetivo
 
         except Exception as e:
@@ -529,7 +458,7 @@ def predecir_todos_los_simbolos(modelo, dfs, simbolos, tp=0.0001):
         for futuro in futuros:
             simbolo, precio_actual, direccion, precio_objetivo = futuro.result()
             if precio_actual is not None:
-                logging.info(f"✔ Precio inicial de {simbolo}: {precio_actual:.5f}")
+                logging.info(f"{simbolo} - Precio actual: {precio_actual:.5f}, Predicción: {direccion} (Objetivo TP: {precio_objetivo:.5f})")
                 resultados_globales[simbolo] = (precio_actual, direccion, precio_objetivo)
 
     if not resultados_globales:
@@ -553,20 +482,20 @@ def predecir_todos_los_simbolos(modelo, dfs, simbolos, tp=0.0001):
             precio_inicial = resultados_globales[simbolo][0]
             precio_final = resultados_futuros[simbolo]
             diferencia = precio_final - precio_inicial
-            logging.info(f"   - Diferencia de {diferencia:.5f} para {simbolo}")
+            logging.info(f"   - Diferencia de: {diferencia:.5f} dólares para {simbolo}")
 
     logging.info("\n")
     for simbolo in resultados_globales:
         if simbolo in resultados_futuros:
-            precio_inicial = resultados_globales[simbolo][0]
-            direccion = resultados_globales[simbolo][1]
+            precio_inicial, direccion, objetivo_tp = resultados_globales[simbolo]
             precio_final = resultados_futuros[simbolo]
-            objetivo_tp = resultados_globales[simbolo][2]
 
             if (direccion == "📈 SUBE" and precio_final >= objetivo_tp) or (direccion == "📉 BAJA" and precio_final <= objetivo_tp):
-                logging.info(f"✅ Predicción correcta para {simbolo}: {direccion} y alcanzó el TP.")
+                logging.info(f"✅ Predicción correcta: El precio {direccion} y alcanzó el Take Profit (TP) con precio de {precio_final:.5f}.")
+                with open("correctas.txt", "a", encoding="utf-8") as file:
+                    file.write(f"{simbolo} - {direccion} (CORRECTA) - Precio inicial: {precio_inicial:.5f}, Precio final: {precio_final:.5f}\n")
             else:
-                logging.warning(f"❌ Predicción incorrecta para {simbolo}: NO {direccion}.")
+                logging.warning(f"❌ Predicción incorrecta: NO {direccion}.")
             logging.info(f"   Precio inicial: {precio_inicial:.5f}, Precio final: {precio_final:.5f}\n")
 
 def main():
@@ -612,7 +541,7 @@ def main():
 
         if dfs:
             predecir_todos_los_simbolos(modelo, dfs, list(dfs.keys()))
-
+            
         logging.info("\n" + "="*50)
         time.sleep(5)  # Aumenta la pausa para evitar sobrecarga
 
