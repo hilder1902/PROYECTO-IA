@@ -1,4 +1,3 @@
-
 """ YA CIERRA CON CTRL + C, SE LE APLICO AJUSTE AUTOMATICO DE LOS HIPERAMETROS Y EPOCAS TMABIEN SE LE MEJORO: ✅ Escalado corregido: Ahora scaler solo se ajusta una vez y se reutiliza.
 ✅ Regularización añadida: Dropout en las capas LSTM para reducir sobreajuste.
 ✅ Cambio de función de pérdida: Huber Loss para mayor estabilidad.
@@ -438,12 +437,17 @@ def predecir_todos_los_simbolos(modelo, dfs, simbolos, tp=0.0001):
                 logging.warning(f"⚠️ No hay datos suficientes para {simbolo}.")
                 return simbolo, None, None, None
 
-            precio_actual = dfs[simbolo]['close'].iloc[-1]
-            datos_entrada = dfs[simbolo][-50:].values.reshape(1, 50, -1)
+            tick = mt5.symbol_info_tick(simbolo)
+            if tick is None:
+                logging.warning(f"⚠️ No se pudo obtener el precio actual para {simbolo}.")
+                return simbolo, None, None, None
 
+            datos_entrada = dfs[simbolo][-50:].values.reshape(1, 50, -1)
             prediccion = modelo.predict(datos_entrada)[0][0]
             direccion = "📈 SUBE" if prediccion > 0.5 else "📉 BAJA"
-            precio_objetivo = precio_actual + tp if prediccion > 0.5 else precio_actual - tp
+            
+            precio_actual = tick.ask if direccion == "📈 SUBE" else tick.bid
+            precio_objetivo = precio_actual + tp if direccion == "📈 SUBE" else precio_actual - tp
             
             logging.info(f"✔ Precio inicial obtenido de MT5 ({simbolo}): {precio_actual:.5f}")
             return simbolo, precio_actual, direccion, precio_objetivo
@@ -470,9 +474,9 @@ def predecir_todos_los_simbolos(modelo, dfs, simbolos, tp=0.0001):
 
     resultados_futuros = {}
     for simbolo in resultados_globales.keys():
-        rates = mt5.copy_rates_from_pos(simbolo, mt5.TIMEFRAME_M1, 0, 1)
-        if rates is not None and len(rates) > 0:
-            precio_final = rates[0]['close']
+        tick_final = mt5.symbol_info_tick(simbolo)
+        if tick_final:
+            precio_final = tick_final.ask if resultados_globales[simbolo][1] == "📈 SUBE" else tick_final.bid
             logging.info(f"✔ Precio después de 5 segundos ({simbolo}): {precio_final:.5f}")
             resultados_futuros[simbolo] = precio_final
 
@@ -507,7 +511,7 @@ def main():
 
     scaler = MinMaxScaler(feature_range=(0, 1))
     modelo = cargar_modelo()  # Asegúrate de que esta función esté definida
-    pares_divisas = ["EURUSDm", "GBPUSDm", "USDJPYm"]
+    pares_divisas = ["BTCXAGm", "BTCXAUGm", "BTCCNHm"]
 
     logging.info("📊 Entrenando el modelo antes de predicciones en tiempo real...")
     datos_historicos = obtener_datos_mt5("BTCUSDm", mt5.TIMEFRAME_M1, 5000)
@@ -532,11 +536,8 @@ def main():
                 continue
 
             df = pd.DataFrame(rates)[['close']]
-
-            # ✅ Ajustamos el scaler con los datos antes de transformar
-            scaler.fit(df[['close']])  
-            df['close'] = scaler.transform(df[['close']])  
-
+            scaler.fit(df[['close']])
+            df['close'] = scaler.transform(df[['close']])
             dfs[simbolo] = df
 
         if dfs:
