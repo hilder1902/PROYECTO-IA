@@ -1,3 +1,4 @@
+
 """ YA CIERRA CON CTRL + C, SE LE APLICO AJUSTE AUTOMATICO DE LOS HIPERAMETROS Y EPOCAS TMABIEN SE LE MEJORO: ✅ Escalado corregido: Ahora scaler solo se ajusta una vez y se reutiliza.
 ✅ Regularización añadida: Dropout en las capas LSTM para reducir sobreajuste.
 ✅ Cambio de función de pérdida: Huber Loss para mayor estabilidad.
@@ -13,6 +14,7 @@
 ✅ YA LOS ARCHIVOS SE GUARDAN CORRECTAMENTE Y LOS BLOQUES ESTAN BIEN SEPARADOS
 ✅ OPERA EN PARALELO MULTIPLES SIMBOLOS, YA VERIFIQUE, PERO AUN NO HACE LAS PREDICCIONES TODAS AL MISMO TIEMPO, LE AGREGUE DIFERENCIACION DE CENTAVOS, DOLAR Y DOLARES CON LA DIFRENCIA
 ✅ YA PREDICE TODO, YA SALE TODO EN ORDEN Y CON TODOS LOS SIMBOLOS PERO NECECITO QUE SEAN LOS MISMOS MENSAJES, TOCA CAMBIAR ALGUNAS COSAS
+✅ EL MODELO LE DA LA MISMA IMPORTANCIA A TODOS LOS PARES, YA SE GUARDAN LAS PREDICCIONES EN SUS CITIOS CORRESPONDIENTES
 IA -17 """
 
 
@@ -432,6 +434,12 @@ import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
 from sklearn.preprocessing import MinMaxScaler
 
+import datetime  # Agregar esta línea arriba si aún no está
+import time
+import logging
+from concurrent.futures import ThreadPoolExecutor
+import MetaTrader5 as mt5
+
 def predecir_todos_los_simbolos(modelo, dfs, simbolos, tp=0.0001):
     """
     Realiza predicciones en paralelo para todos los símbolos.
@@ -452,10 +460,10 @@ def predecir_todos_los_simbolos(modelo, dfs, simbolos, tp=0.0001):
             datos_entrada = dfs[simbolo][-50:].values.reshape(1, 50, -1)
             prediccion = modelo.predict(datos_entrada)[0][0]
             direccion = "📈 SUBE" if prediccion > 0.5 else "📉 BAJA"
-            
+
             precio_actual = tick.ask if direccion == "📈 SUBE" else tick.bid
             precio_objetivo = precio_actual + tp if direccion == "📈 SUBE" else precio_actual - tp
-            
+
             # Aplicar formato decimal numérico americano
             logging.info(f"✔ Precio inicial obtenido de MT5 ({simbolo}): {precio_actual:,.5f}")
             return simbolo, precio_actual, direccion, precio_objetivo
@@ -490,35 +498,46 @@ def predecir_todos_los_simbolos(modelo, dfs, simbolos, tp=0.0001):
 
     logging.info("\n🔍 Comparativa de precios:")
     for simbolo in resultados_globales:
-     if simbolo in resultados_futuros:
-        precio_inicial = resultados_globales[simbolo][0]
-        precio_final = resultados_futuros[simbolo]
-        diferencia = abs(precio_final - precio_inicial)  # Evita números negativos
-        
-        # Clasificación de la diferencia
-        if diferencia >= 2:
-            unidad = "dólares"
-        elif diferencia >= 1:
-            unidad = "dólar"
-        else:
-            unidad = "centavos de dólar"
+        if simbolo in resultados_futuros:
+            precio_inicial = resultados_globales[simbolo][0]
+            precio_final = resultados_futuros[simbolo]
+            diferencia = abs(precio_final - precio_inicial)  # Evita números negativos
 
-        logging.info(f"   - Diferencia de: {diferencia:,.5f} {unidad} para ({simbolo})")
+            # Clasificación de la diferencia
+            if diferencia >= 2:
+                unidad = "dólares"
+            elif diferencia >= 1:
+                unidad = "dólar"
+            else:
+                unidad = "centavos de dólar"
 
+            logging.info(f"   - Diferencia de: {diferencia:,.5f} {unidad} para ({simbolo})")
 
     logging.info("\n")
     for simbolo in resultados_globales:
-        if simbolo in resultados_futuros:
-            precio_inicial, direccion, objetivo_tp = resultados_globales[simbolo]
-            precio_final = resultados_futuros[simbolo]
+     if simbolo in resultados_futuros:
+        precio_inicial, direccion, objetivo_tp = resultados_globales[simbolo]
+        precio_final = resultados_futuros[simbolo]
 
-            if (direccion == "📈 SUBE" and precio_final >= objetivo_tp) or (direccion == "📉 BAJA" and precio_final <= objetivo_tp):
-                logging.info(f"✅  Predicción correcta: El precio {direccion} y alcanzó el Take Profit (TP) con precio de {precio_final:,.5f}. ({simbolo})")
-                with open("correctas.txt", "a", encoding="utf-8") as file:
-                    file.write(f"{simbolo} - {direccion} (CORRECTA) - Precio inicial: {precio_inicial:,.5f}, Precio final: {precio_final:,.5f}\n")
-            else:
-                logging.warning(f"❌ Predicción incorrecta: NO {direccion}. ({simbolo})")
-            logging.info(f"   Precio inicial: {precio_inicial:,.5f}, Precio final: {precio_final:,.5f}\n")
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # Obtener fecha y hora
+
+        if (direccion == "📈 SUBE" and precio_final >= objetivo_tp) or (direccion == "📉 BAJA" and precio_final <= objetivo_tp):
+            logging.info(f"✅  Predicción correcta: El precio {direccion} y alcanzó el Take Profit (TP) con precio de {precio_final:,.5f}. ({simbolo})")
+
+            with open("correctas.txt", "a", encoding="utf-8") as file:
+                file.write(f"{timestamp} - {simbolo} - {direccion} (CORRECTA) - Precio inicial: {precio_inicial:,.5f}, Precio final: {precio_final:,.5f}\n")
+
+            logging.info(f"📂 Predicción guardada en CORRECTAS ✅: {simbolo}  {direccion}")
+
+        else:
+            logging.warning(f"❌ Predicción incorrecta: NO {direccion}. ({simbolo})")
+
+            with open("incorrectas.txt", "a", encoding="utf-8") as file:
+                file.write(f"{timestamp} - {simbolo} - {direccion} (INCORRECTA) - Precio inicial: {precio_inicial:,.5f}, Precio final: {precio_final:,.5f}\n")
+
+            logging.warning(f"📂 Predicción guardada en INCORRECTAS ❌: {simbolo}  {direccion}")
+
+        logging.info(f"   Precio inicial: {precio_inicial:,.5f}, Precio final: {precio_final:,.5f}\n")
 
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
