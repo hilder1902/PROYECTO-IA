@@ -425,6 +425,13 @@ import MetaTrader5 as mt5
 from concurrent.futures import ThreadPoolExecutor
 from sklearn.preprocessing import MinMaxScaler
 
+import MetaTrader5 as mt5
+import logging
+import time
+import pandas as pd
+from concurrent.futures import ThreadPoolExecutor
+from sklearn.preprocessing import MinMaxScaler
+
 def predecir_todos_los_simbolos(modelo, dfs, simbolos, tp=0.0001):
     """
     Realiza predicciones en paralelo para todos los símbolos.
@@ -449,7 +456,8 @@ def predecir_todos_los_simbolos(modelo, dfs, simbolos, tp=0.0001):
             precio_actual = tick.ask if direccion == "📈 SUBE" else tick.bid
             precio_objetivo = precio_actual + tp if direccion == "📈 SUBE" else precio_actual - tp
             
-            logging.info(f"✔ Precio inicial obtenido de MT5 ({simbolo}): {precio_actual:.5f}")
+            # Aplicar formato decimal numérico americano
+            logging.info(f"✔ Precio inicial obtenido de MT5 ({simbolo}): {precio_actual:,.5f}")
             return simbolo, precio_actual, direccion, precio_objetivo
 
         except Exception as e:
@@ -462,7 +470,7 @@ def predecir_todos_los_simbolos(modelo, dfs, simbolos, tp=0.0001):
         for futuro in futuros:
             simbolo, precio_actual, direccion, precio_objetivo = futuro.result()
             if precio_actual is not None:
-                logging.info(f"{simbolo} - Precio actual: {precio_actual:.5f}, Predicción: {direccion} (Objetivo TP: {precio_objetivo:.5f})")
+                logging.info(f"{simbolo} - Precio actual: {precio_actual:,.5f}, Predicción: {direccion} (Objetivo TP: {precio_objetivo:,.5f})")
                 resultados_globales[simbolo] = (precio_actual, direccion, precio_objetivo)
 
     if not resultados_globales:
@@ -477,7 +485,7 @@ def predecir_todos_los_simbolos(modelo, dfs, simbolos, tp=0.0001):
         tick_final = mt5.symbol_info_tick(simbolo)
         if tick_final:
             precio_final = tick_final.ask if resultados_globales[simbolo][1] == "📈 SUBE" else tick_final.bid
-            logging.info(f"✔ Precio después de 5 segundos ({simbolo}): {precio_final:.5f}")
+            logging.info(f"✔ Precio después de 5 segundos ({simbolo}): {precio_final:,.5f}")
             resultados_futuros[simbolo] = precio_final
 
     logging.info("\n🔍 Comparativa de precios:")
@@ -486,7 +494,7 @@ def predecir_todos_los_simbolos(modelo, dfs, simbolos, tp=0.0001):
             precio_inicial = resultados_globales[simbolo][0]
             precio_final = resultados_futuros[simbolo]
             diferencia = precio_final - precio_inicial
-            logging.info(f"   - Diferencia de: {diferencia:.5f} dólares para {simbolo}")
+            logging.info(f"   - Diferencia de: {diferencia:,.5f} dólares para {simbolo}")
 
     logging.info("\n")
     for simbolo in resultados_globales:
@@ -495,12 +503,12 @@ def predecir_todos_los_simbolos(modelo, dfs, simbolos, tp=0.0001):
             precio_final = resultados_futuros[simbolo]
 
             if (direccion == "📈 SUBE" and precio_final >= objetivo_tp) or (direccion == "📉 BAJA" and precio_final <= objetivo_tp):
-                logging.info(f"✅ Predicción correcta: El precio {direccion} y alcanzó el Take Profit (TP) con precio de {precio_final:.5f}.")
+                logging.info(f"✅ Predicción correcta: El precio {direccion} y alcanzó el Take Profit (TP) con precio de {precio_final:,.5f}.")
                 with open("correctas.txt", "a", encoding="utf-8") as file:
-                    file.write(f"{simbolo} - {direccion} (CORRECTA) - Precio inicial: {precio_inicial:.5f}, Precio final: {precio_final:.5f}\n")
+                    file.write(f"{simbolo} - {direccion} (CORRECTA) - Precio inicial: {precio_inicial:,.5f}, Precio final: {precio_final:,.5f}\n")
             else:
                 logging.warning(f"❌ Predicción incorrecta: NO {direccion}.")
-            logging.info(f"   Precio inicial: {precio_inicial:.5f}, Precio final: {precio_final:.5f}\n")
+            logging.info(f"   Precio inicial: {precio_inicial:,.5f}, Precio final: {precio_final:,.5f}\n")
 
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -511,7 +519,7 @@ def main():
 
     scaler = MinMaxScaler(feature_range=(0, 1))
     modelo = cargar_modelo()  # Asegúrate de que esta función esté definida
-    pares_divisas = ["BTCXAGm", "BTCXAUGm", "BTCCNHm"]
+    pares_divisas = ["BTCXAGm", "BTCXAUm", "BTCCNHm"]
 
     logging.info("📊 Entrenando el modelo antes de predicciones en tiempo real...")
     datos_historicos = obtener_datos_mt5("BTCUSDm", mt5.TIMEFRAME_M1, 5000)
