@@ -1,4 +1,3 @@
-
 """ YA CIERRA CON CTRL + C, SE LE APLICO AJUSTE AUTOMATICO DE LOS HIPERAMETROS Y EPOCAS TMABIEN SE LE MEJORO: ✅ Escalado corregido: Ahora scaler solo se ajusta una vez y se reutiliza.
 ✅ Regularización añadida: Dropout en las capas LSTM para reducir sobreajuste.
 ✅ Cambio de función de pérdida: Huber Loss para mayor estabilidad.
@@ -580,7 +579,8 @@ def main():
         if dfs:
             predecir_todos_los_simbolos(modelo, dfs, list(dfs.keys()))
             
-        logging.info("\n" + "="*50)
+        print("\n" * 10 + "=" * 120)
+
         time.sleep(5)  # Aumenta la pausa para evitar sobrecarga
 
 if __name__ == "__main__":
