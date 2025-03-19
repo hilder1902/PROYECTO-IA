@@ -490,11 +490,21 @@ def predecir_todos_los_simbolos(modelo, dfs, simbolos, tp=0.0001):
 
     logging.info("\n🔍 Comparativa de precios:")
     for simbolo in resultados_globales:
-        if simbolo in resultados_futuros:
-            precio_inicial = resultados_globales[simbolo][0]
-            precio_final = resultados_futuros[simbolo]
-            diferencia = precio_final - precio_inicial
-            logging.info(f"   - Diferencia de: {diferencia:,.5f} dólares para {simbolo}")
+     if simbolo in resultados_futuros:
+        precio_inicial = resultados_globales[simbolo][0]
+        precio_final = resultados_futuros[simbolo]
+        diferencia = abs(precio_final - precio_inicial)  # Evita números negativos
+        
+        # Clasificación de la diferencia
+        if diferencia >= 2:
+            unidad = "dólares"
+        elif diferencia >= 1:
+            unidad = "dólar"
+        else:
+            unidad = "centavos de dólar"
+
+        logging.info(f"   - Diferencia de: {diferencia:,.5f} {unidad} para ({simbolo})")
+
 
     logging.info("\n")
     for simbolo in resultados_globales:
@@ -503,11 +513,11 @@ def predecir_todos_los_simbolos(modelo, dfs, simbolos, tp=0.0001):
             precio_final = resultados_futuros[simbolo]
 
             if (direccion == "📈 SUBE" and precio_final >= objetivo_tp) or (direccion == "📉 BAJA" and precio_final <= objetivo_tp):
-                logging.info(f"✅ Predicción correcta: El precio {direccion} y alcanzó el Take Profit (TP) con precio de {precio_final:,.5f}.")
+                logging.info(f"✅  Predicción correcta: El precio {direccion} y alcanzó el Take Profit (TP) con precio de {precio_final:,.5f}. ({simbolo})")
                 with open("correctas.txt", "a", encoding="utf-8") as file:
                     file.write(f"{simbolo} - {direccion} (CORRECTA) - Precio inicial: {precio_inicial:,.5f}, Precio final: {precio_final:,.5f}\n")
             else:
-                logging.warning(f"❌ Predicción incorrecta: NO {direccion}.")
+                logging.warning(f"❌ Predicción incorrecta: NO {direccion}. ({simbolo})")
             logging.info(f"   Precio inicial: {precio_inicial:,.5f}, Precio final: {precio_final:,.5f}\n")
 
 def main():
