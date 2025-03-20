@@ -1,3 +1,4 @@
+
 """ YA CIERRA CON CTRL + C, SE LE APLICO AJUSTE AUTOMATICO DE LOS HIPERAMETROS Y EPOCAS TMABIEN SE LE MEJORO: ✅ Escalado corregido: Ahora scaler solo se ajusta una vez y se reutiliza.
 ✅ Regularización añadida: Dropout en las capas LSTM para reducir sobreajuste.
 ✅ Cambio de función de pérdida: Huber Loss para mayor estabilidad.
@@ -143,34 +144,42 @@ def preparar_datos(df):
     return np.array(X), np.array(y)
 
 def entrenar_modelo(modelo, X_train, y_train, X_test, y_test, precision_objetivo=0.86):
-    """Entrena el modelo con auto-ajuste de hiperparámetros basado en errores pasados."""
+    """Entrena el modelo en una única ronda con máxima eficiencia."""
     global error_memoria
-    epochs = 10
-    intentos = 0
-    mejor_precision = 0
-    mejor_modelo = None
+    
+    epochs = 50  # 🔥 Mayor número de épocas para optimizar en una sola ejecución
+    batch_size = 64  # 🚀 Aumenta tamaño de batch para aprovechar mejor la GPU
+    
+    # 📌 Callbacks para optimizar el entrenamiento
+    early_stopping = tf.keras.callbacks.EarlyStopping(
+        monitor='val_loss', patience=5, restore_best_weights=True
+    )
+    
+    reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(
+        monitor='val_loss', factor=0.5, patience=3, min_lr=1e-6
+    )
+    
+    # 🔥 Entrenamiento potente en UNA SOLA RONDA
+    history = modelo.fit(
+        X_train, y_train,
+        validation_data=(X_test, y_test),
+        epochs=epochs,
+        batch_size=batch_size,
+        verbose=1,
+        callbacks=[early_stopping, reduce_lr]
+    )
 
-    while intentos < 5:
-        modelo.fit(X_train, y_train, epochs=epochs, batch_size=32, verbose=1)
-        precision = evaluar_modelo(modelo, X_test, y_test)
-        logging.info(f"Intento {intentos+1} - Precisión: {precision:.4f} - Épocas: {epochs}")
+    # 📈 Evaluar precisión final
+    precision = evaluar_modelo(modelo, X_test, y_test)
+    logging.info(f"✅ Entrenamiento finalizado - Precisión: {precision:.4f}")
 
-        if precision > mejor_precision:
-            mejor_precision = precision
-            mejor_modelo = modelo
-            guardar_modelo(mejor_modelo)
+    # 💾 Guardar solo si mejora el modelo previo
+    if not hasattr(entrenar_modelo, "mejor_precision") or precision > entrenar_modelo.mejor_precision:
+        entrenar_modelo.mejor_precision = precision
+        guardar_modelo(modelo)
+        logging.info("💾 Modelo guardado con mejor precisión.")
 
-        # 🔥 Aprendizaje de errores: si el error es alto, reentrenar con ajustes dinámicos
-        if error_memoria and np.mean(error_memoria[-10:]) > 0.01:
-            logging.info("⚡ Detectado alto error en predicciones recientes. Ajustando hiperparámetros...")
-            modelo = crear_nuevo_modelo(units_1=128, units_2=64, dense_units=32)
-
-        if precision >= precision_objetivo:
-            logging.info("✅ Precisión objetivo alcanzada. Entrenamiento detenido.")
-            break
-        else:
-            epochs += 5
-        intentos += 1
+    return modelo
 
     return mejor_modelo if mejor_modelo else modelo
 
