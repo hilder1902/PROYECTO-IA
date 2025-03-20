@@ -140,35 +140,22 @@ def preparar_datos(df):
         y.append(df.iloc[i+50].values)
     return np.array(X), np.array(y)
 
-def entrenar_modelo(modelo, X_train, y_train, X_test, y_test, precision_objetivo=0.86):
-    """Entrena el modelo con auto-ajuste de hiperparámetros basado en errores pasados."""
-    global error_memoria
-    epochs = 10
-    intentos = 0
-    mejor_precision = 0
-    mejor_modelo = None
+def entrenar_modelo(modelo, X_train, y_train, X_test, y_test, epochs=10):
+    """Entrena el modelo una sola vez y guarda si mejora la precisión."""
+    
+    modelo.fit(X_train, y_train, epochs=epochs, batch_size=32, verbose=1)
+    
+    precision = evaluar_modelo(modelo, X_test, y_test)
+    logging.info(f"✅ Entrenamiento completado - Precisión: {precision:.4f}")
 
-    while intentos < 5:
-        modelo.fit(X_train, y_train, epochs=epochs, batch_size=32, verbose=1)
-        precision = evaluar_modelo(modelo, X_test, y_test)
-        logging.info(f"Intento {intentos+1} - Precisión: {precision:.4f} - Épocas: {epochs}")
+    # Guardar solo si mejora la precisión anterior
+    if not hasattr(entrenar_modelo, "mejor_precision") or precision > entrenar_modelo.mejor_precision:
+        entrenar_modelo.mejor_precision = precision
+        guardar_modelo(modelo)
+        logging.info("💾 Nuevo modelo guardado con mejor precisión.")
 
-        if precision > mejor_precision:
-            mejor_precision = precision
-            mejor_modelo = modelo
-            guardar_modelo(mejor_modelo)
+    return modelo
 
-        # 🔥 Aprendizaje de errores: si el error es alto, reentrenar con ajustes dinámicos
-        if error_memoria and np.mean(error_memoria[-10:]) > 0.01:
-            logging.info("⚡ Detectado alto error en predicciones recientes. Ajustando hiperparámetros...")
-            modelo = crear_nuevo_modelo(units_1=128, units_2=64, dense_units=32)
-
-        if precision >= precision_objetivo:
-            logging.info("✅ Precisión objetivo alcanzada. Entrenamiento detenido.")
-            break
-        else:
-            epochs += 5
-        intentos += 1
 
     return mejor_modelo if mejor_modelo else modelo
 
