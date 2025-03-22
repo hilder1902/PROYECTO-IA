@@ -17,7 +17,8 @@
 ✅ EL MODELO LE DA LA MISMA IMPORTANCIA A TODOS LOS PARES, YA SE GUARDAN LAS PREDICCIONES EN SUS CITIOS CORRESPONDIENTES.
 ✅ ESTA TODO MAS ORGANIZADO PERO SOLO PREDICE QUE SUBE NUCA DICE QUE BAJA.
 ✅ SE ELIMINO EL SESGO DE PREDICCION, YA NO SE ESTANCA UNICAMENTE EN UNA DIRECCION, LA CALIDAD DE LAS PREDICCIONES MEJORARON SIGNIFICATIVAMENTE.
-IA -20 = INCOMOPLETA - IMPLEMENTACION DEL APRENDIZAJE POR REFUERZO  - INCOMPLETO"""
+✅ SE LE APLICO APRENDIZAJE POR REFUERZO, FALTA DEJAR QUE REALICE LAS PREDICCIONES CORRESPONDIENTES.
+IA -20 """
 
 
 
@@ -257,6 +258,13 @@ def guardar_modelo(modelo):
 
 
 
+import logging
+import time
+import datetime
+import numpy as np
+import MetaTrader5 as mt5
+from concurrent.futures import ThreadPoolExecutor
+
 def predecir_todos_los_simbolos(modelo, dfs, simbolos, scaler, tp=0.0001):
     """
     Realiza predicciones en paralelo para todos los símbolos utilizando el método de predicción refinado.
@@ -269,7 +277,7 @@ def predecir_todos_los_simbolos(modelo, dfs, simbolos, scaler, tp=0.0001):
                 logging.warning(f"⚠️ No hay datos suficientes para {simbolo}.")
                 return simbolo, None, None, None
 
-            # Obtener el precio actual
+            # Obtener el precio actual desde MT5
             precio_actual = None
             tick_info = mt5.symbol_info_tick(simbolo)
 
@@ -280,11 +288,11 @@ def predecir_todos_los_simbolos(modelo, dfs, simbolos, scaler, tp=0.0001):
                 logging.error(f"❌ No se pudo obtener un precio inicial válido para {simbolo}.")
                 return simbolo, None, None, None  
 
-            # Preparar los datos de entrada
+            # Preparar los datos de entrada para el modelo
             recent_data = dfs[simbolo][-50:].values.reshape(1, 50, -1)
             prediccion_simbolo = modelo.predict(recent_data)[0][0]
 
-            # Aplicar inverse transform si el scaler está configurado
+            # Aplicar inverse_transform si el scaler está disponible
             if hasattr(scaler, "min_") and hasattr(scaler, "scale_"):
                 prediccion_real = scaler.inverse_transform(np.array([[prediccion_simbolo]]))[0][0]
             else:
@@ -352,6 +360,7 @@ def predecir_todos_los_simbolos(modelo, dfs, simbolos, scaler, tp=0.0001):
             logging.info(f"   - Diferencia de: {diferencia:,.5f} {unidad} para ({simbolo})")
 
     logging.info("\n")
+    
     for simbolo in resultados_globales:
         if simbolo in resultados_futuros:
             precio_inicial, direccion, objetivo_tp = resultados_globales[simbolo]
@@ -376,7 +385,8 @@ def predecir_todos_los_simbolos(modelo, dfs, simbolos, scaler, tp=0.0001):
                 logging.warning(f"📂 Predicción guardada en INCORRECTAS ❌: {simbolo}  {direccion}")
 
             logging.info(f"   Precio inicial: {precio_inicial:,.5f}, Precio final: {precio_final:,.5f}\n")
-            return resultados_globales, resultados_futuros
+
+    return resultados_globales, resultados_futuros
 
 # Configurar el formato numérico americano
 locale.setlocale(locale.LC_NUMERIC, "en_US.UTF-8")
@@ -414,93 +424,112 @@ memoria_errores = deque(maxlen=100)  # Para almacenar los últimos 100 errores
 epsilon = 0.1  # Tasa inicial de exploración-explotación
 
 
+import logging
+
+import logging
+import sys
+import os
+import numpy as np
+import tensorflow as tf
+from collections import deque
+
+import numpy as np
+import tensorflow as tf
+import os
+import sys
+import logging
+from collections import deque
+
 def evaluar_predicciones(resultados_globales, resultados_futuros, modelo, X_train, y_train, ruta_guardado):
-    """Evalúa predicciones y ajusta el modelo en tiempo real con refuerzo inmediato."""
+    """Evalúa predicciones en paralelo y ajusta el modelo en tiempo real con refuerzo inmediato."""
     global total_predicciones, aciertos_totales, mejor_precision, memoria_errores, epsilon
 
     mse_loss = tf.keras.losses.MeanSquaredError()
 
-    # ✅ Asegurar que X_train e y_train sean numpy arrays
     if X_train is None or y_train is None:
         raise ValueError("🚨 Error: X_train o y_train son None. Revisa los datos de entrada.")
 
     X_train = np.array(X_train, dtype=np.float32)
     y_train = np.array(y_train, dtype=np.float32)
 
-    print(f"✅ X_train shape: {X_train.shape}, y_train shape: {y_train.shape}")
+    simbolos_validos = [s for s in resultados_globales if s in resultados_futuros and total_predicciones < 5000]
 
-    for simbolo in resultados_globales:
-        if simbolo in resultados_futuros and total_predicciones < 5000:
-            precio_inicial, direccion, objetivo_tp = resultados_globales[simbolo]
-            precio_final = resultados_futuros[simbolo]
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if not simbolos_validos:
+        return aciertos_totales, total_predicciones
 
-            # 📌 Evaluación de la predicción y asignación de recompensa
-            if (direccion == "📈 SUBE" and precio_final >= objetivo_tp) or (direccion == "📉 BAJA" and precio_final <= objetivo_tp):
-                recompensa = 1.5 if aciertos_totales % 5 == 4 else 1
-                aciertos_totales += 1
-                logging.info(f"✅  Predicción correcta: {simbolo} {direccion} - TP alcanzado {precio_final:,.5f}")
-                with open("correctas.txt", "a", encoding="utf-8") as file:
-                    file.write(f"{timestamp} - {simbolo} - {direccion} (CORRECTA) - {precio_inicial:,.5f} -> {precio_final:,.5f}\n")
-            else:
-                error_magnitud = abs(precio_final - objetivo_tp) / abs(precio_inicial - objetivo_tp)
-                recompensa = -2 if error_magnitud > 1.5 else -1 if error_magnitud > 1.1 else -0.5
-                
-                # ✅ Asegurar que se guardan copias reales en memoria_errores
-                memoria_errores.append((np.copy(X_train), np.copy(y_train), recompensa))
-                logging.warning(f"❌  Predicción incorrecta: {simbolo} NO {direccion}")
-                with open("incorrectas.txt", "a", encoding="utf-8") as file:
-                    file.write(f"{timestamp} - {simbolo} - {direccion} (INCORRECTA) - {precio_inicial:,.5f} -> {precio_final:,.5f}\n")
+    precios_iniciales = np.array([resultados_globales[s][0] for s in simbolos_validos])
+    direcciones = np.array([resultados_globales[s][1] for s in simbolos_validos])
+    objetivos_tp = np.array([resultados_globales[s][2] for s in simbolos_validos])
+    precios_finales = np.array([resultados_futuros[s] for s in simbolos_validos])
 
-            # 🔥 Ajuste inmediato con refuerzo
-            try:
-                with tf.GradientTape() as tape:
-                    predicciones = modelo(X_train, training=True)
+    # 📌 Evaluación de las predicciones
+    aciertos = ((direcciones == "📈 SUBE") & (precios_finales >= objetivos_tp)) | \
+               ((direcciones == "📉 BAJA") & (precios_finales <= objetivos_tp))
 
-                    # ✅ Validación antes de calcular la pérdida
-                    if predicciones is None or y_train is None:
-                        raise ValueError("🚨 Error: 'predicciones' o 'y_train' es None.")
+    errores_magnitud = np.abs(precios_finales - objetivos_tp) / np.abs(precios_iniciales - objetivos_tp)
 
-                    print(f"🔍 Predicciones shape: {predicciones.shape}")  # Agregar depuración
+    # 📌 Asignación de recompensas en lote
+    recompensas = np.where(aciertos, 1.5 if (aciertos_totales % 5 == 4) else 1, 
+                            np.where(errores_magnitud > 1.5, -2, 
+                                     np.where(errores_magnitud > 1.1, -1, -0.5)))
 
-                    perdida = mse_loss(y_train, predicciones)
-                    perdida = tf.reduce_mean(perdida) * (1 - recompensa)  # Modulación con recompensa
+    aciertos_totales += np.sum(aciertos)
+    errores_indices = np.where(~aciertos)[0]
 
-                gradientes = tape.gradient(perdida, modelo.trainable_variables)
-                modelo.optimizer.apply_gradients(zip(gradientes, modelo.trainable_variables))
+    # 📌 Almacenar errores para corrección futura
+    for i in errores_indices:
+        memoria_errores.append((np.copy(X_train[i]), np.copy(y_train[i]), recompensas[i]))
 
-            except Exception as e:
-                logging.error(f"🚨 Error durante el ajuste inmediato: {str(e)}")
+    # 🔥 Ajuste inmediato en lote con refuerzo
+    try:
+        with tf.GradientTape() as tape:
+            predicciones = modelo(X_train, training=True)
+            perdida = mse_loss(y_train, predicciones)
+            perdida = tf.reduce_mean(perdida * (1 - recompensas))
 
-            # 🔄 Corrección de errores recientes
-            if len(memoria_errores) >= 10:
-                X_err, y_err, recompensa_err = memoria_errores.popleft()
-                with tf.GradientTape() as tape:
-                    pred_err = modelo(X_err, training=True)
-                    perdida_err = mse_loss(y_err, pred_err)
-                    perdida_err = tf.reduce_mean(perdida_err) * (1 - recompensa_err)
+        gradientes = tape.gradient(perdida, modelo.trainable_variables)
+        modelo.optimizer.apply_gradients(zip(gradientes, modelo.trainable_variables))
+    except Exception as e:
+        logging.error(f"🚨 Error durante el ajuste inmediato: {str(e)}")
 
-                gradientes_err = tape.gradient(perdida_err, modelo.trainable_variables)
-                modelo.optimizer.apply_gradients(zip(gradientes_err, modelo.trainable_variables))
+    # 🔄 Corrección de errores recientes en lote
+    if len(memoria_errores) >= 10:
+        X_err, y_err, recompensa_err = zip(*list(memoria_errores)[:10])
+        memoria_errores = deque(list(memoria_errores)[10:])  # Limpiar los primeros 10 errores
 
-            # 📉 Ajuste dinámico de exploración (ε-greedy)
-            epsilon = max(0.05, epsilon * 0.99)
+        X_err, y_err, recompensa_err = np.array(X_err), np.array(y_err), np.array(recompensa_err)
 
-            total_predicciones += 1
+        with tf.GradientTape() as tape:
+            pred_err = modelo(X_err, training=True)
+            perdida_err = mse_loss(y_err, pred_err)
+            perdida_err = tf.reduce_mean(perdida_err * (1 - recompensa_err))
 
-            # 📊 Evaluación y guardado dinámico
-            if total_predicciones == 5000:
-                logging.info(f"📊 Predicciones totales: {total_predicciones}, Aciertos: {aciertos_totales}")
+        gradientes_err = tape.gradient(perdida_err, modelo.trainable_variables)
+        modelo.optimizer.apply_gradients(zip(gradientes_err, modelo.trainable_variables))
 
-                if aciertos_totales >= 4000:
-                    nombre_modelo = f"modelo_{aciertos_totales}_de_5000.h5"
-                    modelo.save(os.path.join(ruta_guardado, nombre_modelo))
-                    logging.info(f"💾 Modelo guardado: {nombre_modelo} con {aciertos_totales}/5000 predicciones correctas")
+    # 📉 Ajuste dinámico de exploración (ε-greedy)
+    epsilon = max(0.05, epsilon * 0.99)
 
-                elif aciertos_totales < 3500:
-                    logging.warning("⚠️ Precisión menor al 70%. Se recomienda reajustar el modelo.")
+    total_predicciones += len(simbolos_validos)
+    incorrectas = total_predicciones - aciertos_totales
+
+    # 📊 Actualizar en la consola en la misma línea
+    sys.stdout.write(f"\r📊 Predicciones: {total_predicciones} de 5.000 | ✅ Correctas: {aciertos_totales} | ❌ Incorrectas: {incorrectas} | 🎯 Última Recompensa: {recompensas[-1]} | {aciertos_totales}/{total_predicciones}    ")
+    sys.stdout.flush()
+
+    # 📊 Evaluación y guardado dinámico
+    if total_predicciones >= 5000:
+        sys.stdout.write("\n")  # Salto de línea al final del conteo
+        if aciertos_totales >= 4000:
+            nombre_modelo = f"modelo_{aciertos_totales}_de_5000.h5"
+            modelo.save(os.path.join(ruta_guardado, nombre_modelo))
+            logging.info(f"💾 Modelo guardado: {nombre_modelo} con {aciertos_totales}/5000 predicciones correctas")
+        elif aciertos_totales < 3500:
+            logging.warning("⚠️ Precisión menor al 70%. Se recomienda reajustar el modelo.")
 
     return aciertos_totales, total_predicciones
+
+
 
 
 
