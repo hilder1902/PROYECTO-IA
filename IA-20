@@ -17,9 +17,7 @@
 ✅ EL MODELO LE DA LA MISMA IMPORTANCIA A TODOS LOS PARES, YA SE GUARDAN LAS PREDICCIONES EN SUS CITIOS CORRESPONDIENTES.
 ✅ ESTA TODO MAS ORGANIZADO PERO SOLO PREDICE QUE SUBE NUCA DICE QUE BAJA.
 ✅ SE ELIMINO EL SESGO DE PREDICCION, YA NO SE ESTANCA UNICAMENTE EN UNA DIRECCION, LA CALIDAD DE LAS PREDICCIONES MEJORARON SIGNIFICATIVAMENTE.
-IA -19 """
-
-
+IA -20 = INCOMOPLETA - IMPLEMENTACION DEL APRENDIZAJE POR REFUERZO  - INCOMPLETO"""
 
 
 
@@ -34,22 +32,25 @@ IA -19 """
 
 " promt:  actua como un programador señor experto en IA y trading algoritmico"
 
-import MetaTrader5 as mt5 
-import logging
-import time
 
 import tensorflow as tf
-from tensorflow import keras
-
-import scipy as sp
-import pandas as pd
 import numpy as np
+import pandas as pd
+import MetaTrader5 as mt5
+import pickle
+import logging
+import time
 import os
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
-
+import datetime
+import locale
+import re
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.model_selection import train_test_split, TimeSeriesSplit
-from sklearn.metrics import accuracy_score, mean_absolute_error
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import accuracy_score, mean_absolute_error, r2_score
+import scipy as sp
+from tensorflow import keras
 
 # Definir capas de Keras
 Input = tf.keras.layers.Input
@@ -63,67 +64,8 @@ Model = tf.keras.models.Model
 Sequential = tf.keras.models.Sequential
 Adam = tf.keras.optimizers.Adam
 EarlyStopping = tf.keras.callbacks.EarlyStopping
-
-
-import tensorflow as tf
-import numpy as np
-import pandas as pd
-import MetaTrader5 as mt5
-import pickle
-import logging
-from sklearn.preprocessing import MinMaxScaler
-
 scaler = MinMaxScaler(feature_range=(0, 1))
-import time
-import logging
-import numpy as np
-import MetaTrader5 as mt5
-import pickle
-import logging
-import numpy as np
-import pandas as pd
-import MetaTrader5 as mt5
-import tensorflow as tf
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import r2_score
-import MetaTrader5 as mt5
-import pandas as pd
-import numpy as np
-import logging
-from sklearn.preprocessing import MinMaxScaler
-import re
-
-from datetime import datetime
-
-import time
-
-from datetime import datetime
-
-import locale
-from datetime import datetime
-
-import logging
-import time
-import pandas as pd
-import MetaTrader5 as mt5
-from concurrent.futures import ThreadPoolExecutor
-from sklearn.preprocessing import MinMaxScaler
-
-import MetaTrader5 as mt5
-import logging
-import time
-import pandas as pd
-from concurrent.futures import ThreadPoolExecutor
-from sklearn.preprocessing import MinMaxScaler
-
-import datetime  # Agregar esta línea arriba si aún no está
-import time
-import logging
-from concurrent.futures import ThreadPoolExecutor
-import MetaTrader5 as mt5
-import tensorflow as tf
-
-
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
 
 
@@ -314,13 +256,6 @@ def guardar_modelo(modelo):
 
 
 
-import MetaTrader5 as mt5
-import numpy as np
-import datetime
-import time
-import locale
-import logging
-from concurrent.futures import ThreadPoolExecutor
 
 def predecir_todos_los_simbolos(modelo, dfs, simbolos, scaler, tp=0.0001):
     """
@@ -465,16 +400,7 @@ def buscar_por_fecha(archivo, fecha):
 
 
 
-import MetaTrader5 as mt5
-import pandas as pd
-import numpy as np
-import tensorflow as tf
-import datetime
-import logging
-import os
-import time
-from collections import deque
-from sklearn.preprocessing import MinMaxScaler
+
 
 # 🔹 Variables Globales
 total_predicciones = 0
@@ -483,38 +409,10 @@ mejor_precision = 0
 memoria_errores = deque(maxlen=50)  # Buffer de memoria para errores recientes
 epsilon = 0.1  # Exploración inicial
 
-import tensorflow as tf
-import datetime
-import os
-import logging
-from collections import deque
-import numpy as np
-
 # Inicialización de memoria de errores
 memoria_errores = deque(maxlen=100)  # Para almacenar los últimos 100 errores
 epsilon = 0.1  # Tasa inicial de exploración-explotación
 
-import tensorflow as tf
-import datetime
-import os
-import logging
-from collections import deque
-import numpy as np
-
-# Inicialización de memoria de errores
-memoria_errores = deque(maxlen=100)
-epsilon = 0.1
-
-import tensorflow as tf
-import datetime
-import os
-import logging
-from collections import deque
-import numpy as np
-
-# Inicialización de memoria de errores
-memoria_errores = deque(maxlen=100)
-epsilon = 0.1
 
 def evaluar_predicciones(resultados_globales, resultados_futuros, modelo, X_train, y_train, ruta_guardado):
     """Evalúa predicciones y ajusta el modelo en tiempo real con refuerzo inmediato."""
@@ -605,12 +503,10 @@ def evaluar_predicciones(resultados_globales, resultados_futuros, modelo, X_trai
     return aciertos_totales, total_predicciones
 
 
-import logging
-import time
-import os
-import pandas as pd
-import MetaTrader5 as mt5
-from sklearn.preprocessing import MinMaxScaler
+
+
+
+
 
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
