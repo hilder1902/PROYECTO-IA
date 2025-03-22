@@ -1,0 +1,699 @@
+""" YA CIERRA CON CTRL + C, SE LE APLICO AJUSTE AUTOMATICO DE LOS HIPERAMETROS Y EPOCAS TMABIEN SE LE MEJORO.
+✅ Escalado corregido: Ahora scaler solo se ajusta una vez y se reutiliza.
+✅ Regularización añadida: Dropout en las capas LSTM para reducir sobreajuste.
+✅ Cambio de función de pérdida: Huber Loss para mayor estabilidad.
+✅ Métrica mejorada: Se usa R² en lugar de una métrica arbitraria.
+✅ CAMBIE EL ENFOQUE DE PREDICCION POR UNO QUE PREDICE SI EL MERCADO EN 5 SEGUNDOS SUBE O BAJA, PARECE QUE FUNCIONA, ARREGLARE UN POCO EL CODIGO.
+✅ YA LA IA SE ENTRENA Y PREDICE DESPUES DE ENTRENAR LAS PREDCCIONES LAS HACE BIEN PERO AUN LE FALTAN, Y SOLO DA SEÑALES DE COMPRA TOCA CONSTATAR SI TAMBIEN DA SEÑALES DE VENTA.
+✅ YA CORREGI LOS MENSAJES DE VERIFICACION DE LA PREDICCION, TOCA REGTIFICAR EN PROXIMAS ACTUALIZACIONES  SI LAS PREDICCIONES SON CORRECTAS MEDIANTE EL PRECIO INCIAL Y FINAL. 
+✅ YA CORREGI LA SALIDA DEL PRECIO DESPUES DE LOS 5 SEGUUNDOS, EL ERROR QUE HAY AHORA ES QUE LOS PRECIOS DE INCIO Y FINAL SON LOS MISMOS Y NO VARIAN.
+✅ EN LA FUNCION DE PREDICCION Y EN LA DE EVALUAR LE AÑADI LA LOGICA INTERNA DE OBTENER EL PRECIO DIRECTAMENTE DE MT5 , ES DECIR LA OBTENCIO DEL PRECIO DE MT5 NO ES EXTERNA SE HACE DENTRO DE LA FUNCION.
+✅ LE AGREGUE UNA MEJRO VERIFICACION A EVALUAR LA PREDICCION.
+✅ MEJORE LA LEJIVILIDAD DEL PRECIO DA EL PRECIO ANTES Y DESPUES CORRECTAMENTE PERO LA EVALUCION LA HACE MAL.
+✅ YA EVALUA CORRECTAMENTE LAS OPERACIONES, EL ERROR AHORA ES QUE GURARDA LAS PREDICCIONES EN EL ACRICHO TXT INCORRECTO.
+✅ YA LOS ARCHIVOS SE GUARDAN CORRECTAMENTE Y LOS BLOQUES ESTAN BIEN SEPARADOS.
+✅ OPERA EN PARALELO MULTIPLES SIMBOLOS, YA VERIFIQUE, PERO AUN NO HACE LAS PREDICCIONES TODAS AL MISMO TIEMPO, LE AGREGUE DIFERENCIACION DE CENTAVOS, DOLAR Y DOLARES CON LA DIFRENCIA.
+✅ YA PREDICE TODO, YA SALE TODO EN ORDEN Y CON TODOS LOS SIMBOLOS PERO NECECITO QUE SEAN LOS MISMOS MENSAJES, TOCA CAMBIAR ALGUNAS COSAS.
+✅ EL MODELO LE DA LA MISMA IMPORTANCIA A TODOS LOS PARES, YA SE GUARDAN LAS PREDICCIONES EN SUS CITIOS CORRESPONDIENTES.
+✅ ESTA TODO MAS ORGANIZADO PERO SOLO PREDICE QUE SUBE NUCA DICE QUE BAJA.
+✅ SE ELIMINO EL SESGO DE PREDICCION, YA NO SE ESTANCA UNICAMENTE EN UNA DIRECCION, LA CALIDAD DE LAS PREDICCIONES MEJORARON SIGNIFICATIVAMENTE.
+✅ SE LE APLICO APRENDIZAJE POR REFUERZO, FALTA DEJAR QUE REALICE LAS PREDICCIONES CORRESPONDIENTES.
+IA -21 = INCOMPLETA  """
+
+
+
+
+".\mi_entorno_1\Scripts\Activate"
+
+"numero de cuenta" "197115903"
+
+"servidor" "Exness-MT5Trial11"
+
+".\mi_entorno_1\Scripts\Activate"
+
+" promt:  actua como un programador señor experto en IA y trading algoritmico"
+
+
+import tensorflow as tf
+import numpy as np
+import pandas as pd
+import MetaTrader5 as mt5
+import pickle
+import logging
+import time
+import os
+import datetime
+import locale
+import re
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from sklearn.model_selection import train_test_split, TimeSeriesSplit
+from sklearn.metrics import accuracy_score, mean_absolute_error, r2_score
+import scipy as sp
+from tensorflow import keras
+
+
+
+# Definir capas de Keras
+Input = tf.keras.layers.Input
+LSTM = tf.keras.layers.LSTM
+Dense = tf.keras.layers.Dense
+Attention = tf.keras.layers.Attention
+Dropout = tf.keras.layers.Dropout
+
+# Importar modelos y optimizadores desde tf.keras
+Model = tf.keras.models.Model
+Sequential = tf.keras.models.Sequential
+Adam = tf.keras.optimizers.Adam
+EarlyStopping = tf.keras.callbacks.EarlyStopping
+scaler = MinMaxScaler(feature_range=(0, 1))
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+Sequential = tf.keras.models.Sequential
+load_model = tf.keras.models.load_model
+EarlyStopping = keras.callbacks.EarlyStopping  
+ReduceLROnPlateau = keras.callbacks.ReduceLROnPlateau 
+EarlyStopping = keras.callbacks.EarlyStopping  
+ReduceLROnPlateau = keras.callbacks.ReduceLROnPlateau  
+
+
+
+
+
+
+
+
+
+
+
+# ⚡ Buffer para almacenar errores pasados
+error_memoria = []
+
+scaler = StandardScaler()
+
+import os
+import logging
+import tensorflow as tf
+
+# Definir la función load_model con la estructura deseada
+Sequential = tf.keras.models.Sequential
+load_model = tf.keras.models.load_model
+
+def cargar_modelo_usuario(ruta_guardado="C:/Users/pc/Desktop/PLAN CLASE HILDER/mi_entorno_1"):
+    modelos = [f for f in os.listdir(ruta_guardado) if f.endswith(".keras")]
+    
+    if not modelos:
+        logging.warning("⚠️ No se encontró un modelo preentrenado. Se entrenará uno nuevo.")
+        return None
+
+    print("\n📂 Modelos disponibles:")
+    for i, modelo in enumerate(modelos):
+        print(f"{i + 1}. {modelo}")
+
+    try:
+        opcion = int(input("\nIngrese el número del modelo a cargar: ")) - 1
+        if 0 <= opcion < len(modelos):
+            modelo_seleccionado = modelos[opcion]
+            logging.info(f"✅ Cargando el modelo seleccionado: {modelo_seleccionado}")
+            return load_model(os.path.join(ruta_guardado, modelo_seleccionado))  # ✅ Ahora usa la función correctamente
+        else:
+            logging.error("❌ Opción inválida. Se entrenará un nuevo modelo.")
+            return None
+    except ValueError:
+        logging.error("❌ Entrada no válida. Se entrenará un nuevo modelo.")
+        return None
+
+
+
+def crear_nuevo_modelo(units_1=64, units_2=32, dense_units=16, dropout_rate=0.2):
+    """Crea un modelo optimizado con mayor estabilidad, mejor aprendizaje y generalización."""
+    modelo = tf.keras.Sequential([
+        tf.keras.layers.LSTM(units_1, return_sequences=True, input_shape=(50, 1),
+                             kernel_initializer="glorot_uniform", recurrent_initializer="orthogonal",
+                             bias_initializer="zeros", recurrent_regularizer=tf.keras.regularizers.l2(1e-4),
+                             return_state=False, stateful=False, dropout=0.1, recurrent_dropout=0.1),
+        tf.keras.layers.LayerNormalization(),  # Alternativa a BatchNormalization, mejor en secuencias largas
+        tf.keras.layers.Dropout(dropout_rate),
+        
+        tf.keras.layers.LSTM(units_2, kernel_initializer="glorot_uniform",
+                             recurrent_initializer="orthogonal", bias_initializer="zeros",
+                             recurrent_regularizer=tf.keras.regularizers.l2(1e-4),
+                             return_state=False, stateful=False, dropout=0.1, recurrent_dropout=0.1),
+        tf.keras.layers.LayerNormalization(),
+        tf.keras.layers.Dropout(dropout_rate),
+        
+        tf.keras.layers.Dense(dense_units, activation="relu",
+                              kernel_initializer="he_normal", bias_initializer="zeros",
+                              kernel_regularizer=tf.keras.regularizers.l2(1e-4)),
+        
+        tf.keras.layers.Dense(1, kernel_initializer="glorot_uniform", bias_initializer="zeros")
+    ])
+    
+    modelo.compile(optimizer=tf.keras.optimizers.AdamW(learning_rate=0.0008, weight_decay=1e-4, epsilon=1e-7, amsgrad=True),
+                   loss=tf.keras.losses.Huber(delta=1.0),
+                   metrics=[tf.keras.metrics.MeanAbsoluteError(), tf.keras.metrics.RootMeanSquaredError()])
+    
+    return modelo
+
+
+
+scaler = MinMaxScaler(feature_range=(0, 1))  # Escalador global para normalización
+
+def obtener_datos_mt5(simbolo, timeframe, n_candles):
+    """Obtiene los datos históricos desde MetaTrader 5 con mejoras en robustez y eficiencia."""
+    
+    rates = mt5.copy_rates_from_pos(simbolo, timeframe, 0, n_candles)
+    
+    if rates is None or len(rates) < n_candles:
+        logging.warning(f"No se pudieron obtener suficientes datos para {simbolo}.")
+        return None
+    
+    df = pd.DataFrame(rates, columns=['close'])  # Asegura que solo se tome 'close'
+    
+    if df.isnull().values.any() or df.empty:  # Previene errores por datos nulos o vacíos
+        logging.error(f"Datos recibidos contienen NaN o están vacíos para {simbolo}.")
+        return None
+
+    # Evita recalibrar el scaler en cada llamada
+    if not hasattr(obtener_datos_mt5, "scaler_fitted"):
+        scaler.fit(df[['close']])
+        obtener_datos_mt5.scaler_fitted = True
+
+    df['close'] = scaler.transform(df[['close']]).astype(np.float32)  # Optimización de tipo de dato
+
+    return df
+
+
+
+
+
+def preparar_datos(df):
+    """Prepara los datos para el entrenamiento del modelo con optimización en rendimiento y seguridad."""
+    
+    if df is None or df.empty:
+        raise ValueError("El DataFrame de entrada está vacío o es None.")
+    
+    df_values = df.values.astype(np.float32)  # Optimización de tipo de dato
+    X, y = [], []
+    secuencia = 50
+    
+    for i in range(len(df_values) - secuencia):
+        X.append(df_values[i:i + secuencia])
+        y.append(df_values[i + secuencia])
+    
+    return np.array(X, dtype=np.float32), np.array(y, dtype=np.float32)
+
+
+
+
+import keras
+import numpy as np
+import logging
+
+EarlyStopping = keras.callbacks.EarlyStopping  
+ReduceLROnPlateau = keras.callbacks.ReduceLROnPlateau  
+
+import numpy as np
+import logging
+
+import logging
+import numpy as np
+import random
+import tensorflow as tf
+
+
+# 🔹 Fijar semilla para resultados reproducibles
+SEED = 42
+tf.random.set_seed(SEED)
+np.random.seed(SEED)
+random.seed(SEED)
+
+import pandas as pd
+import numpy as np
+import logging
+from sklearn.preprocessing import MinMaxScaler
+
+import pandas as pd
+import numpy as np
+import logging
+from sklearn.preprocessing import MinMaxScaler
+
+import numpy as np
+import pandas as pd
+import logging
+from sklearn.preprocessing import MinMaxScaler
+
+def entrenar_modelo(modelo, X_train, y_train, X_test, y_test, precision_objetivo=0.86):
+    """Entrena el modelo con hiperoptimización dinámica y reajustes automáticos en caso de baja precisión."""
+
+    global error_memoria
+    mejor_precision = 0.0
+    mejor_modelo = None
+
+    logging.info("📊 Análisis de datos en curso...")
+
+    # 🔹 Asegurar que los datos son 2D antes de cualquier transformación
+    if isinstance(X_train, np.ndarray):
+        if X_train.ndim == 3:  
+            X_train = X_train.squeeze(-1)  
+        elif X_train.ndim > 3:
+            raise ValueError(f"Error: X_train tiene {X_train.ndim} dimensiones y debe ser <= 2D.")
+
+    if isinstance(X_test, np.ndarray):
+        if X_test.ndim == 3:  
+            X_test = X_test.squeeze(-1)  
+        elif X_test.ndim > 3:
+            raise ValueError(f"Error: X_test tiene {X_test.ndim} dimensiones y debe ser <= 2D.")
+
+    X_train_df = pd.DataFrame(X_train)
+    logging.info(X_train_df.describe())
+
+    # 🔹 Normalización de datos
+    scaler = MinMaxScaler()
+    X_train = scaler.fit_transform(X_train)
+    X_test = scaler.transform(X_test)
+
+    for intento in range(3):  # 🔄 Hasta 3 intentos con reajuste dinámico
+        logging.info(f"🛠️ Intento {intento + 1}/3 de entrenamiento...")
+
+        early_stopping = EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True, min_delta=1e-4)
+        lr_scheduler = ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=3, min_lr=1e-6)
+
+        batch_size = 32 if intento == 0 else min(128, batch_size * 2)
+
+        historial = modelo.fit(
+            X_train, y_train,
+            epochs=30,  
+            batch_size=batch_size,
+            verbose=1,
+            validation_data=(X_test, y_test),
+            callbacks=[early_stopping, lr_scheduler]
+        )
+
+        precision = evaluar_modelo(modelo, X_test, y_test)
+        logging.info(f"📊 Intento {intento + 1} - Precisión: {precision:.4f} - Batch Size: {batch_size}")
+
+        if precision > mejor_precision:
+            mejor_precision = precision
+            mejor_modelo = modelo
+            guardar_modelo(mejor_modelo)
+
+        if precision >= precision_objetivo:
+            logging.info("✅ Precisión objetivo alcanzada. Finalizando entrenamiento.")
+            return mejor_modelo
+
+        if precision < 0.75 and intento < 2:
+            logging.warning("⚠️ Precisión baja. Optimizando estructura del modelo...")
+            modelo = crear_nuevo_modelo(
+                units_1=512,  
+                units_2=256,
+                dense_units=128,
+                dropout_rate=0.4  
+            )
+
+    logging.warning(f"⚠️ Precisión final insuficiente ({mejor_precision:.4f}). Revisión manual recomendada.")
+    return mejor_modelo if mejor_modelo else modelo
+
+
+def evaluar_modelo(modelo, X_test, y_test):
+    """Evalúa la precisión del modelo usando R² en lugar de MAE."""
+    y_pred = modelo.predict(X_test)
+    r2 = r2_score(y_test, y_pred)
+    return r2
+
+def guardar_modelo(modelo):
+    """Guarda el modelo entrenado en un archivo."""
+    with open("modelo_entrenado.pkl", "wb") as f:
+        pickle.dump(modelo, f)
+    logging.info("💾 Modelo guardado correctamente.")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def predecir_todos_los_simbolos(modelo, dfs, simbolos, scaler, tp=0.0001):
+    """
+    Realiza predicciones en paralelo para todos los símbolos utilizando el método de predicción refinado.
+    """
+    resultados_globales = {}
+
+    def procesar_simbolo(simbolo):
+        try:
+            if simbolo not in dfs or dfs[simbolo].empty:
+                logging.warning(f"⚠️ No hay datos suficientes para {simbolo}.")
+                return simbolo, None, None, None
+
+            # Obtener el precio actual desde MT5
+            precio_actual = None
+            tick_info = mt5.symbol_info_tick(simbolo)
+
+            if tick_info and isinstance(tick_info.bid, (int, float)):
+                precio_actual = float(tick_info.bid)
+                logging.info(f"✔ Precio inicial obtenido de MT5 ({simbolo}): {precio_actual:,.5f}")
+            else:
+                logging.error(f"❌ No se pudo obtener un precio inicial válido para {simbolo}.")
+                return simbolo, None, None, None  
+
+            # Preparar los datos de entrada para el modelo
+            recent_data = dfs[simbolo][-50:].values.reshape(1, 50, -1)
+            prediccion_simbolo = modelo.predict(recent_data)[0][0]
+
+            # Aplicar inverse_transform si el scaler está disponible
+            if hasattr(scaler, "min_") and hasattr(scaler, "scale_"):
+                prediccion_real = scaler.inverse_transform(np.array([[prediccion_simbolo]]))[0][0]
+            else:
+                logging.error(f"⚠️ El scaler no ha sido ajustado antes de hacer inverse_transform en {simbolo}.")
+                prediccion_real = prediccion_simbolo  
+
+            # Determinar dirección y precio objetivo
+            if prediccion_real > precio_actual + tp:
+                direccion = "📈 SUBE"
+                precio_objetivo = precio_actual + tp
+            elif prediccion_real < precio_actual - tp:
+                direccion = "📉 BAJA"
+                precio_objetivo = precio_actual - tp
+            else:
+                direccion = "🟰 SIN CAMBIO"
+                precio_objetivo = precio_actual  
+
+            return simbolo, precio_actual, direccion, precio_objetivo
+
+        except Exception as e:
+            logging.warning(f"⚠️ Error al procesar {simbolo}: {str(e)}")
+            return simbolo, None, None, None
+
+    # Ejecutar en paralelo
+    with ThreadPoolExecutor(max_workers=len(simbolos)) as executor:
+        futuros = {executor.submit(procesar_simbolo, simbolo): simbolo for simbolo in simbolos}
+
+        for futuro in futuros:
+            simbolo, precio_actual, direccion, precio_objetivo = futuro.result()
+            if precio_actual is not None:
+                logging.info(f"{simbolo} - Precio actual: {precio_actual:,.5f}, Predicción: {direccion} (Objetivo TP: {precio_objetivo:,.5f})")
+                resultados_globales[simbolo] = (precio_actual, direccion, precio_objetivo)
+
+    if not resultados_globales:
+        logging.warning("❌ No se realizaron predicciones debido a falta de datos.")
+        return
+
+    logging.info("\n⏳ Esperando 5 segundos para evaluar el resultado...\n")
+    time.sleep(5)
+
+    # Evaluar predicciones después de 5 segundos
+    resultados_futuros = {}
+    for simbolo in resultados_globales.keys():
+        tick_final = mt5.symbol_info_tick(simbolo)
+        if tick_final:
+            precio_final = tick_final.ask if resultados_globales[simbolo][1] == "📈 SUBE" else tick_final.bid
+            logging.info(f"✔ Precio después de 5 segundos ({simbolo}): {precio_final:,.5f}")
+            resultados_futuros[simbolo] = precio_final
+
+    logging.info("\n🔍 Comparativa de precios:")
+    for simbolo in resultados_globales:
+        if simbolo in resultados_futuros:
+            precio_inicial = resultados_globales[simbolo][0]
+            precio_final = resultados_futuros[simbolo]
+            diferencia = abs(precio_final - precio_inicial)
+
+            # Clasificación de la diferencia
+            if diferencia >= 2:
+                unidad = "dólares"
+            elif diferencia >= 1:
+                unidad = "dólar"
+            else:
+                unidad = "centavos de dólar"
+
+            logging.info(f"   - Diferencia de: {diferencia:,.5f} {unidad} para ({simbolo})")
+
+    logging.info("\n")
+    
+    for simbolo in resultados_globales:
+        if simbolo in resultados_futuros:
+            precio_inicial, direccion, objetivo_tp = resultados_globales[simbolo]
+            precio_final = resultados_futuros[simbolo]
+
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            if (direccion == "📈 SUBE" and precio_final >= objetivo_tp) or (direccion == "📉 BAJA" and precio_final <= objetivo_tp):
+                logging.info(f"✅  Predicción correcta: El precio {direccion} y alcanzó el Take Profit (TP) con precio de {precio_final:,.5f}. ({simbolo})")
+
+                with open("correctas.txt", "a", encoding="utf-8") as file:
+                    file.write(f"{timestamp} - {simbolo} - {direccion} (CORRECTA) - Precio inicial: {precio_inicial:,.5f}, Precio final: {precio_final:,.5f}\n")
+
+                logging.info(f"📂 Predicción guardada en CORRECTAS ✅: {simbolo}  {direccion}")
+
+            else:
+                logging.warning(f"❌ Predicción incorrecta: NO {direccion}. ({simbolo})")
+
+                with open("incorrectas.txt", "a", encoding="utf-8") as file:
+                    file.write(f"{timestamp} - {simbolo} - {direccion} (INCORRECTA) - Precio inicial: {precio_inicial:,.5f}, Precio final: {precio_final:,.5f}\n")
+
+                logging.warning(f"📂 Predicción guardada en INCORRECTAS ❌: {simbolo}  {direccion}")
+
+            logging.info(f"   Precio inicial: {precio_inicial:,.5f}, Precio final: {precio_final:,.5f}\n")
+
+    return resultados_globales, resultados_futuros
+
+# Configurar el formato numérico americano
+locale.setlocale(locale.LC_NUMERIC, "en_US.UTF-8")
+
+def formatear_precio(precio):
+    return locale.format_string("%.6f", precio, grouping=True).replace(",", "X").replace(".", ",").replace("X", ".")
+
+def buscar_por_fecha(archivo, fecha):
+    with open(archivo, "r") as f:
+        lineas = f.readlines()
+    
+    resultados = [linea for linea in lineas if fecha in linea]
+    return resultados
+
+
+
+
+
+
+
+
+
+
+
+
+# 🔹 Variables Globales
+total_predicciones = 0
+aciertos_totales = 0
+mejor_precision = 0
+memoria_errores = deque(maxlen=50)  # Buffer de memoria para errores recientes
+epsilon = 0.1  # Exploración inicial
+
+# Inicialización de memoria de errores
+memoria_errores = deque(maxlen=100)  # Para almacenar los últimos 100 errores
+epsilon = 0.1  # Tasa inicial de exploración-explotación
+
+
+import logging
+
+import logging
+import sys
+import os
+import numpy as np
+import tensorflow as tf
+from collections import deque
+
+import numpy as np
+import tensorflow as tf
+import os
+import sys
+import logging
+from collections import deque
+
+def evaluar_predicciones(resultados_globales, resultados_futuros, modelo, X_train, y_train, ruta_guardado):
+    """Evalúa predicciones en paralelo y ajusta el modelo en tiempo real con refuerzo inmediato."""
+    global total_predicciones, aciertos_totales, mejor_precision, memoria_errores, epsilon
+
+    mse_loss = tf.keras.losses.MeanSquaredError()
+
+    if X_train is None or y_train is None:
+        raise ValueError("🚨 Error: X_train o y_train son None. Revisa los datos de entrada.")
+
+    X_train = np.array(X_train, dtype=np.float32)
+    y_train = np.array(y_train, dtype=np.float32)
+
+    simbolos_validos = [s for s in resultados_globales if s in resultados_futuros and total_predicciones < 5000]
+
+    if not simbolos_validos:
+        return aciertos_totales, total_predicciones
+
+    precios_iniciales = np.array([resultados_globales[s][0] for s in simbolos_validos])
+    direcciones = np.array([resultados_globales[s][1] for s in simbolos_validos])
+    objetivos_tp = np.array([resultados_globales[s][2] for s in simbolos_validos])
+    precios_finales = np.array([resultados_futuros[s] for s in simbolos_validos])
+
+    # 📌 Evaluación de las predicciones
+    aciertos = ((direcciones == "📈 SUBE") & (precios_finales >= objetivos_tp)) | \
+               ((direcciones == "📉 BAJA") & (precios_finales <= objetivos_tp))
+
+    errores_magnitud = np.abs(precios_finales - objetivos_tp) / np.abs(precios_iniciales - objetivos_tp)
+
+    # 📌 Asignación de recompensas en lote
+    recompensas = np.where(aciertos, 1.5 if (aciertos_totales % 5 == 4) else 1, 
+                            np.where(errores_magnitud > 1.5, -2, 
+                                     np.where(errores_magnitud > 1.1, -1, -0.5)))
+
+    aciertos_totales += np.sum(aciertos)
+    errores_indices = np.where(~aciertos)[0]
+
+    # 📌 Almacenar errores para corrección futura
+    for i in errores_indices:
+        memoria_errores.append((np.copy(X_train[i]), np.copy(y_train[i]), recompensas[i]))
+
+    # 🔥 Ajuste inmediato en lote con refuerzo
+    try:
+        with tf.GradientTape() as tape:
+            predicciones = modelo(X_train, training=True)
+            perdida = mse_loss(y_train, predicciones)
+            perdida = tf.reduce_mean(perdida * (1 - recompensas))
+
+        gradientes = tape.gradient(perdida, modelo.trainable_variables)
+        modelo.optimizer.apply_gradients(zip(gradientes, modelo.trainable_variables))
+    except Exception as e:
+        logging.error(f"🚨 Error durante el ajuste inmediato: {str(e)}")
+
+    # 🔄 Corrección de errores recientes en lote
+    if len(memoria_errores) >= 10:
+        X_err, y_err, recompensa_err = zip(*list(memoria_errores)[:10])
+        memoria_errores = deque(list(memoria_errores)[10:])  # Limpiar los primeros 10 errores
+
+        X_err, y_err, recompensa_err = np.array(X_err), np.array(y_err), np.array(recompensa_err)
+
+        with tf.GradientTape() as tape:
+            pred_err = modelo(X_err, training=True)
+            perdida_err = mse_loss(y_err, pred_err)
+            perdida_err = tf.reduce_mean(perdida_err * (1 - recompensa_err))
+
+        gradientes_err = tape.gradient(perdida_err, modelo.trainable_variables)
+        modelo.optimizer.apply_gradients(zip(gradientes_err, modelo.trainable_variables))
+
+    # 📉 Ajuste dinámico de exploración (ε-greedy)
+    epsilon = max(0.05, epsilon * 0.99)
+
+    total_predicciones += len(simbolos_validos)
+    incorrectas = total_predicciones - aciertos_totales
+
+    # 📊 Actualizar en la consola en la misma línea
+    sys.stdout.write(f"\r📊 Predicciones: {total_predicciones} de 5.000 | ✅ Correctas: {aciertos_totales} | ❌ Incorrectas: {incorrectas} | 🎯 Última Recompensa: {recompensas[-1]} | {aciertos_totales}/{total_predicciones}    ")
+    sys.stdout.flush()
+
+    # 📊 Evaluación y guardado dinámico
+    if total_predicciones >= 5000:
+        sys.stdout.write("\n")  # Salto de línea al final del conteo
+        if aciertos_totales >= 4000:
+            nombre_modelo = f"modelo_{aciertos_totales}_de_5000.h5"
+            modelo.save(os.path.join(ruta_guardado, nombre_modelo))
+            logging.info(f"💾 Modelo guardado: {nombre_modelo} con {aciertos_totales}/5000 predicciones correctas")
+        elif aciertos_totales < 3500:
+            logging.warning("⚠️ Precisión menor al 70%. Se recomienda reajustar el modelo.")
+
+    return aciertos_totales, total_predicciones
+
+
+
+
+
+
+
+
+
+
+
+def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+    if not mt5.initialize():
+        logging.error("❌ Error al inicializar MetaTrader 5.")
+        return
+
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    modelo = cargar_modelo_usuario()  # Asegúrate de definir esta función
+    pares_divisas = ["BTCXAGm", "BTCXAUm", "BTCCNHm"]
+    ruta_guardado = "C:/Users/pc/Desktop/PLAN CLASE HILDER/mi_entorno_1"
+
+    if not os.path.exists(ruta_guardado):
+        os.makedirs(ruta_guardado)
+
+    if modelo is None:
+        logging.info("📊 No se encontró un modelo, entrenando uno nuevo...")
+        try:
+            datos_historicos = obtener_datos_mt5("BTCUSDm", mt5.TIMEFRAME_M1, 5000)
+            if datos_historicos is None or len(datos_historicos) <= 50:
+                logging.error("❌ No hay suficientes datos históricos para entrenar un modelo.")
+                return
+
+            X, y = preparar_datos(datos_historicos)
+            split = int(len(X) * 0.8)
+
+            # ✅ Definimos X_train, X_test, y_train, y_test correctamente
+            X_train, X_test = X[:split], X[split:]
+            y_train, y_test = y[:split], y[split:]
+            
+            modelo = crear_nuevo_modelo()  # ✅ Se crea un nuevo modelo si no existe
+            modelo = entrenar_modelo(modelo, X_train, y_train, X_test, y_test, precision_objetivo=0.86)
+            guardar_modelo(modelo)
+
+        except Exception as e:
+            logging.error(f"🚨 Error al entrenar el modelo: {e}", exc_info=True)
+            return
+
+    logging.info("✅ Modelo cargado. Iniciando predicciones en tiempo real...")
+
+    while True:
+        logging.info("\n" + "="*50)
+        logging.info("🔍 Iniciando predicciones para todos los símbolos...")
+
+        dfs = {}
+        for simbolo in pares_divisas:
+            rates = mt5.copy_rates_from_pos(simbolo, mt5.TIMEFRAME_M1, 0, 500)
+            if rates is None or len(rates) < 50:
+                logging.warning(f"⚠️ No hay suficientes datos recientes para {simbolo}.")
+                continue
+
+            df = pd.DataFrame(rates)[['close']]
+            scaler.fit(df[['close']])
+            df['close'] = scaler.transform(df[['close']])
+            dfs[simbolo] = df
+
+        if not dfs:
+            logging.warning("⚠️ No se encontraron datos suficientes para predicciones.")
+            time.sleep(5)
+            continue
+
+        try:
+            predicciones = predecir_todos_los_simbolos(modelo, dfs, list(dfs.keys()), scaler)
+            
+            if predicciones is None:
+                logging.error("⚠️ Error: predecir_todos_los_simbolos devolvió None. Revisar función.")
+                time.sleep(5)
+                continue
+            
+            resultados_globales, resultados_futuros = predicciones
+            evaluar_predicciones(resultados_globales, resultados_futuros, modelo, X, y, ruta_guardado)
+
+        except Exception as e:
+            logging.error(f"🚨 Error durante la predicción: {e}", exc_info=True)
+
+        print("\n" * 10 + "=" * 120)
+        time.sleep(5)
+
+if __name__ == "__main__":
+    main()
